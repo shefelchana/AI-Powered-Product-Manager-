@@ -37,5 +37,7 @@ export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH
 export const reviewWord = (id, known) =>
   request(`/api/words/${id}/review`, json("PATCH", { known }));
 export const wordOfDay = () => request("/api/word-of-day");
+export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE" });
+export const fromAcademy = (id) => request(`/api/words/${id}/academy`, { method: "POST" });
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));

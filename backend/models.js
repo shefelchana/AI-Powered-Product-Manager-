@@ -23,9 +23,12 @@ export const Word = sequelize.define("Word", {
   // The Hebrew explanation — the point of the whole thing. Empty is allowed:
   // at a lesson you type the word and nothing else.
   definition: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
-  // "typed" = Anna wrote it herself, "generated" = a model did (pass 2).
-  // Empty means there is no definition yet.
+  // "typed" = Anna wrote it herself, "academy" = the Academy of the Hebrew
+  // Language. Empty means there is no definition yet. Whatever the source,
+  // it is named on the card: you always know what you are trusting.
   definitionSource: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
+  sourceLabel: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
+  sourceUrl: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   translation: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
   // Your own phrases with this word, one per line. A word learned inside a
   // sentence you lived through sticks; a word learned in a column does not.

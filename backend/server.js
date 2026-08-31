@@ -4,6 +4,7 @@ import express from "express";
 import { Op } from "sequelize";
 import { sequelize, dbKind } from "./db.js";
 import { Word, INTERVALS, LAST_BOX, dayOffset, today } from "./models.js";
+import { lookup } from "./academy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -80,9 +81,26 @@ app.patch("/api/words/:id", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
+  if (req.body?.term !== undefined) {
+    const term = clean(req.body.term, MAX_TERM);
+    if (!term) return res.status(400).json({ error: "Слово не может быть пустым" });
+    const clash = await Word.findOne({ where: { term } });
+    if (clash && clash.id !== word.id) {
+      return res.status(409).json({ error: "Такое слово уже есть", word: clash });
+    }
+    word.term = term;
+  }
   if (req.body?.definition !== undefined) {
-    word.definition = clean(req.body.definition, MAX_DEFINITION);
-    word.definitionSource = word.definition ? "typed" : "";
+    const definition = clean(req.body.definition, MAX_DEFINITION);
+    // Подпись следует за текстом. Текст переписали руками — своё объяснение
+    // главнее, но и ссылку на Академию снимаем: она больше не про этот текст.
+    // Сохранение без изменений подпись не трогает.
+    if (definition !== word.definition) {
+      word.definition = definition;
+      word.definitionSource = definition ? "typed" : "";
+      word.sourceLabel = "";
+      word.sourceUrl = "";
+    }
   }
   if (req.body?.translation !== undefined) {
     word.translation = clean(req.body.translation, MAX_TERM);
@@ -135,6 +153,37 @@ app.post("/api/words/:id/examples", async (req, res) => {
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
   word.examples = word.examples ? `${word.examples}\n${text}` : text;
+  await word.save();
+  res.json(word);
+});
+
+app.delete("/api/words/:id", async (req, res) => {
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  await word.destroy();
+  res.json({ ok: true });
+});
+
+// Справка из базы Академии языка иврит. Внешний сервис — значит отдельная
+// обработка сбоев: слово при неудаче не меняется, ошибка видна.
+app.post("/api/words/:id/academy", async (req, res) => {
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+
+  let found;
+  try {
+    found = await lookup(word.term);
+  } catch (error) {
+    return res.status(502).json({ error: `База Академии недоступна: ${error.message}` });
+  }
+  if (!found) {
+    return res.status(404).json({ error: "В базе Академии такого слова нет" });
+  }
+
+  word.definition = found.definition;
+  word.definitionSource = "academy";
+  word.sourceLabel = found.sourceLabel;
+  word.sourceUrl = found.sourceUrl;
   await word.save();
   res.json(word);
 });

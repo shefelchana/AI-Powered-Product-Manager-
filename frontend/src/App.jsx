@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, dueWords, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, dueWords, fromAcademy, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
 import { canSpeak, speak } from "./speech.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
+
+// Откуда объяснение — видно всегда. Академия даёт терминологическую справку,
+// не толкование, поэтому подпись с названием словаря и годом обязательна.
+function SourceNote({ word }) {
+  if (!word.sourceLabel) return null;
+  return (
+    <p className="source" dir="rtl">
+      {word.sourceUrl ? (
+        <a href={word.sourceUrl} target="_blank" rel="noreferrer">{word.sourceLabel}</a>
+      ) : (
+        word.sourceLabel
+      )}
+    </p>
+  );
+}
 
 function SpeakButton({ text }) {
   if (!canSpeak()) return null;
@@ -12,6 +27,21 @@ function SpeakButton({ text }) {
     <button className="speak" onClick={() => speak(text)} aria-label="Прочитать вслух">
       🔊
     </button>
+  );
+}
+
+function Help() {
+  return (
+    <div className="help">
+      <p><strong>Как этим пользоваться</strong></p>
+      <ol>
+        <li><strong>На занятии</strong> — вкладка «Добавить»: вбей слово и жми Enter. Перевод и объяснение можно не заполнять, это делается потом.</li>
+        <li><strong>Дома</strong> — вкладка «Слова»: нажми на слово, чтобы поправить опечатку, или возьми справку из Академии языка иврит одной кнопкой.</li>
+        <li><strong>Каждый день</strong> — вкладка «Слово дня»: одно слово, с которым живёшь весь день. Придумал фразу — записал. Фразы потом всплывают на повторении.</li>
+        <li><strong>Повторение</strong> — «Повторять»: не больше 10 слов за раз. Сначала вспомни сам, потом открывай. Нет сил — есть кнопка на три слова.</li>
+      </ol>
+      <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
+    </div>
   );
 }
 
@@ -64,6 +94,7 @@ function DayScreen({ onChanged }) {
       <p className="muted">Прочитай вслух — так запоминается лучше</p>
 
       {word.definition && <p className="definition" dir="rtl">{word.definition}</p>}
+      <SourceNote word={word} />
 
       <form onSubmit={submit}>
         <label className="field-label" htmlFor="example">Твоя фраза с этим словом</label>
@@ -214,9 +245,7 @@ function ReviewScreen({ queue, onFinished }) {
           ) : (
             <p className="muted">Объяснения пока нет</p>
           )}
-          {word.definitionSource === "generated" && (
-            <p className="muted">⚠️ сгенерировано, проверь</p>
-          )}
+          <SourceNote word={word} />
           {exampleList(word).length > 0 && (
             <ul className="examples">
               {exampleList(word).map((line, i) => <li key={i} dir="rtl">{line}</li>)}
@@ -243,41 +272,130 @@ function ReviewScreen({ queue, onFinished }) {
   );
 }
 
-// ---------- дозаполнить объяснения ----------
+// ---------- список слов: правка, справка, удаление ----------
 
-function FillScreen({ words, onSaved }) {
-  const [drafts, setDrafts] = useState({});
+function WordRow({ word, open, onToggle, onChanged }) {
+  const [draft, setDraft] = useState(word);
   const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  if (words.length === 0) {
-    return <p className="muted">Все слова с объяснением. Ничего разбирать не надо.</p>;
-  }
+  // Слово могло измениться на сервере — например, справка пришла из Академии.
+  // Без этого в полях остаётся старый черновик и следующее «Сохранить»
+  // затирает только что полученное.
+  useEffect(() => { setDraft(word); }, [word.id, word.updatedAt]);
 
-  async function save(word) {
+  async function run(action) {
+    setBusy(true);
     setError(null);
     try {
-      await updateWord(word.id, { definition: drafts[word.id] ?? "" });
-      onSaved();
+      await action();
+      await onChanged();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
+  if (!open) {
+    return (
+      <button className="word-row" onClick={onToggle}>
+        <span className="word-row-term" dir="rtl">{word.term}</span>
+        <span className="muted">
+          {word.definition ? `коробка ${word.box}` : "без объяснения"}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="word-card">
+      <label className="field-label">Слово</label>
+      <input
+        dir="rtl"
+        value={draft.term}
+        onChange={(e) => setDraft({ ...draft, term: e.target.value })}
+      />
+
+      <label className="field-label">Объяснение</label>
+      <textarea
+        dir="rtl"
+        rows={3}
+        value={draft.definition}
+        onChange={(e) => setDraft({ ...draft, definition: e.target.value })}
+      />
+      <SourceNote word={word} />
+
+      <label className="field-label">Перевод</label>
+      <input
+        dir="ltr"
+        value={draft.translation}
+        onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
+      />
+
+      <div className="row-actions">
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => run(() => fromAcademy(word.id))}
+        >
+          Из Академии
+        </button>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() =>
+            run(() =>
+              updateWord(word.id, {
+                term: draft.term,
+                definition: draft.definition,
+                translation: draft.translation,
+              })
+            )
+          }
+        >
+          Сохранить
+        </button>
+        {confirming ? (
+          <button className="danger" disabled={busy} onClick={() => run(() => deleteWord(word.id))}>
+            Точно удалить
+          </button>
+        ) : (
+          <button className="secondary" onClick={() => setConfirming(true)}>Удалить</button>
+        )}
+      </div>
+
+      {error && <p className="error">{error}</p>}
+      <button className="quiet" onClick={onToggle}>Свернуть</button>
+    </div>
+  );
+}
+
+function WordsScreen({ words, onChanged }) {
+  const [openId, setOpenId] = useState(null);
+
+  if (words.length === 0) {
+    return <p className="muted">Слов пока нет. Начни с вкладки «Добавить».</p>;
+  }
+
+  // Сначала то, у чего нет объяснения: это и есть список дел.
+  const sorted = [...words].sort((a, b) => {
+    const byDefinition = Number(Boolean(a.definition)) - Number(Boolean(b.definition));
+    return byDefinition !== 0 ? byDefinition : b.id - a.id;
+  });
+
   return (
     <div>
-      {words.map((word) => (
-        <div className="fill-row" key={word.id}>
-          <p className="fill-term" dir="rtl">{word.term}</p>
-          <textarea
-            dir="rtl"
-            rows={2}
-            value={drafts[word.id] ?? ""}
-            onChange={(e) => setDrafts({ ...drafts, [word.id]: e.target.value })}
-          />
-          <button className="secondary" onClick={() => save(word)}>Сохранить</button>
-        </div>
+      {sorted.map((word) => (
+        <WordRow
+          key={word.id}
+          word={word}
+          open={openId === word.id}
+          onToggle={() => setOpenId(openId === word.id ? null : word.id)}
+          onChanged={onChanged}
+        />
       ))}
-      {error && <p className="error">{error}</p>}
     </div>
   );
 }
@@ -288,6 +406,7 @@ export default function App() {
   const [words, setWords] = useState([]);
   const [db, setDb] = useState("");
   const [view, setView] = useState("add");
+  const [showHelp, setShowHelp] = useState(false);
   const [queue, setQueue] = useState([]);
   const [error, setError] = useState(null);
 
@@ -311,7 +430,7 @@ export default function App() {
   }, []);
 
   const dueCount = words.filter(isDue).length;
-  const pending = words.filter((word) => !word.definition);
+  const pending = words.filter((word) => !word.definition).length;
   const learned = words.filter((word) => word.box === 5).length;
   const phrases = words.reduce((sum, word) => sum + exampleList(word).length, 0);
 
@@ -328,8 +447,13 @@ export default function App() {
     <main>
       <h1>Слова с занятий</h1>
 
+      <button className="quiet help-toggle" onClick={() => setShowHelp(!showHelp)}>
+        {showHelp ? "Свернуть инструкцию" : "Как этим пользоваться"}
+      </button>
+
       <p className="counters">
         К повторению: <strong>{dueCount}</strong> · выучено: <strong>{learned}</strong> · своих фраз: <strong>{phrases}</strong>
+        {pending > 0 && <> · без объяснения: <strong>{pending}</strong></>}
       </p>
 
       {view !== "review" && (
@@ -343,8 +467,8 @@ export default function App() {
           <button className="tab" onClick={() => startReview(10)} disabled={dueCount === 0}>
             Повторять
           </button>
-          <button className={view === "fill" ? "tab active" : "tab"} onClick={() => setView("fill")}>
-            Разобрать ({pending.length})
+          <button className={view === "words" ? "tab active" : "tab"} onClick={() => setView("words")}>
+            Слова ({words.length})
           </button>
         </nav>
       )}
@@ -357,9 +481,11 @@ export default function App() {
 
       {error && <p className="error">{error}</p>}
 
+      {(showHelp || words.length === 0) && <Help />}
+
       {view === "day" && <DayScreen onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "fill" && <FillScreen words={pending} onSaved={reload} />}
+      {view === "words" && <WordsScreen words={words} onChanged={reload} />}
       {view === "review" && (
         <ReviewScreen
           queue={queue}

@@ -281,3 +281,83 @@ button {
 .examples li {
   margin-bottom: 0.6rem;
 }
+
+/* ---------- инструкция ---------- */
+
+.help {
+  background: #1d2026;
+  border: 1px solid #2b2f37;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.help ol {
+  padding-inline-start: 1.2rem;
+  margin: 0.5rem 0;
+}
+
+.help li {
+  margin-bottom: 0.6rem;
+}
+
+.help-toggle {
+  margin: 0 0 0.5rem;
+}
+
+/* ---------- список слов ---------- */
+
+.word-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.8rem 0;
+  text-align: start;
+  color: #e8eaed;
+  background: transparent;
+  border: none;
+  border-top: 1px solid #2b2f37;
+  border-radius: 0;
+}
+
+.word-row-term {
+  font-size: 1.5rem;
+}
+
+.word-card {
+  border-top: 1px solid #2b2f37;
+  border-bottom: 1px solid #2b2f37;
+  padding: 0.5rem 0 1rem;
+  margin: 0.5rem 0;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.row-actions button {
+  flex: 1 1 auto;
+}
+
+.danger {
+  padding: 0.7rem 1rem;
+  color: #ffb4a9;
+  background: #2a1d1c;
+  border: 1px solid #5a2f2a;
+}
+
+/* Подпись источника: всегда видно, откуда объяснение. */
+.source {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #9aa3b2;
+}
+
+.source a {
+  color: #9aa3b2;
+}
