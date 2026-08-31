@@ -1,6 +1,12 @@
+/* Читаемость задана сразу, панели настроек нет: пять ручек — пять решений
+   перед каждым чтением. Специальный «шрифт для дислексии» не берём — в
+   контролируемых сравнениях он не даёт выигрыша. Работают интервалы,
+   короткая строка и крупный кегль. */
 :root {
   color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1.8;
 }
 
 body {
@@ -10,32 +16,230 @@ body {
 }
 
 main {
-  max-width: 640px;
+  max-width: 34rem;
   margin: 0 auto;
-  padding: 3rem 1.5rem;
+  padding: 2rem 1.25rem 4rem;
 }
 
 h1 {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.counters {
+  color: #9aa3b2;
+  margin: 0 0 1.5rem;
+}
+
+.counters strong {
+  color: #e8eaed;
+}
+
+/* ---------- навигация ---------- */
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
 }
 
-section {
+.tab {
+  flex: 1 1 auto;
+  padding: 0.7rem 0.9rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: #e8eaed;
   background: #1d2026;
   border: 1px solid #2b2f37;
   border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
+  cursor: pointer;
 }
 
-h2 {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.tab.active {
+  border-color: #6ea8fe;
+}
+
+.tab:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- поля ---------- */
+
+.field-label {
+  display: block;
+  font-size: 0.85rem;
   color: #9aa3b2;
+  margin: 1rem 0 0.35rem;
+}
+
+input,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+  line-height: 1.6;
+  color: #e8eaed;
+  background: #1d2026;
+  border: 1px solid #2b2f37;
+  border-radius: 8px;
+}
+
+/* Слово — крупно: его читают, а не просматривают. */
+.term-input {
+  font-size: 1.8rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.8rem;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid #6ea8fe;
+  outline-offset: 1px;
+}
+
+.extra {
+  margin: 1rem 0;
+  color: #9aa3b2;
+}
+
+.extra summary {
+  cursor: pointer;
+  padding: 0.4rem 0;
+}
+
+/* ---------- кнопки ---------- */
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.primary {
+  display: block;
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.9rem;
+  color: #14161a;
+  background: #6ea8fe;
+  border: none;
+  font-weight: 600;
+}
+
+.secondary {
+  margin-top: 0.75rem;
+  padding: 0.7rem 1rem;
+  color: #e8eaed;
+  background: #1d2026;
+  border: 1px solid #2b2f37;
+}
+
+/* ---------- повторение ---------- */
+
+.review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+}
+
+.exit {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.9rem;
+  color: #9aa3b2;
+  background: transparent;
+  border: 1px solid #2b2f37;
+}
+
+.review-term {
+  font-size: 2.6rem;
+  line-height: 1.4;
+  margin: 1.5rem 0;
+}
+
+.definition {
+  font-size: 1.3rem;
+  margin: 1rem 0;
+}
+
+.translation {
+  font-size: 1.15rem;
+  color: #9aa3b2;
+  margin: 0.75rem 0;
+}
+
+.reveal {
+  border-top: 1px solid #2b2f37;
+  padding-top: 1rem;
+}
+
+/* Ответы различаются текстом, положением и знаком — не только цветом. */
+.answers {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.answer-no,
+.answer-yes {
+  flex: 1;
+  padding: 0.9rem;
+  font-weight: 600;
+  border: 1px solid #2b2f37;
+}
+
+.answer-no {
+  color: #ffb4a9;
+  background: #2a1d1c;
+}
+
+.answer-yes {
+  color: #14161a;
+  background: #7ddba0;
+  border-color: transparent;
+}
+
+.done {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.done-title {
+  font-size: 1.6rem;
   margin: 0 0 0.5rem;
+}
+
+/* ---------- разбор ---------- */
+
+.fill-row {
+  border-top: 1px solid #2b2f37;
+  padding: 1rem 0;
+}
+
+.fill-term {
+  font-size: 1.6rem;
+  margin: 0 0 0.5rem;
+}
+
+/* ---------- служебное ---------- */
+
+.muted {
+  color: #9aa3b2;
+}
+
+.ok {
+  color: #7ddba0;
 }
 
 .error {
   color: #ff8a80;
+}
+
+.footer {
+  margin-top: 3rem;
+  font-size: 0.8rem;
+  color: #5f6773;
 }
