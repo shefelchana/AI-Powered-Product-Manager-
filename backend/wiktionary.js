@@ -39,3 +39,52 @@ export function parseEntry(extract) {
   if (!vocalized || !gloss) return null;
   return { vocalized, translit, gender, gloss };
 }
+
+// Сетевая часть: тянем текстовую выжимку статьи из английского Викисловаря.
+// Второй источник справок — им сверяем данные Академии языка иврит.
+const API = "https://en.wiktionary.org/w/api.php";
+// Викимедиа режет запросы без содержательного User-Agent — это их требование,
+// а не перестраховка: без него приходит 429.
+const UA = "vocab-cards/1.0 (personal Hebrew study tool; contact: shefelchana@gmail.com)";
+// Пауза между запросами — вежливость к чужому бесплатному API: одиночные
+// обращения оно терпит, очередь без пауз — уже нет.
+const GAP_MS = 1100;
+const TIMEOUT_MS = 20000;
+
+let lastCall = 0;
+
+// Пауза считается от прошлого запроса, а не спит фиксированно: если между
+// вызовами и так прошла секунда, ждать нечего.
+async function paced(url) {
+  const wait = GAP_MS - (Date.now() - lastCall);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastCall = Date.now();
+  return fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+}
+
+export async function lookupWiktionary(term) {
+  const clean = String(term ?? "").trim();
+  if (!clean) return null;
+
+  const url = `${API}?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(clean)}`;
+
+  let res;
+  // 429 — не отказ, а «слишком часто»: повторяем с растущей задержкой.
+  // После последней попытки не ждём: ждать уже некого, дальше только ошибка.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    res = await paced(url);
+    if (res.status !== 429) break;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+  }
+  if (!res.ok) throw new Error(`Викисловарь ответил ${res.status}`);
+
+  const data = await res.json();
+  const page = Object.values(data?.query?.pages ?? {})[0];
+  if (!page || page.missing !== undefined) return null;
+
+  // null от parseEntry — «данных нет» (в том числе когда статья неоднозначна),
+  // а не сбой: наверх уходит null, исключение здесь неуместно.
+  const entry = parseEntry(page.extract);
+  if (!entry) return null;
+  return { ...entry, sourceUrl: `https://en.wiktionary.org/wiki/${encodeURIComponent(clean)}#Hebrew` };
+}
