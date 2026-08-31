@@ -18,6 +18,14 @@ export function dayOffset(days) {
 
 export const today = () => dayOffset(0);
 
+// Язык определяем по письменности: выбирать его руками — лишнее решение
+// на каждое слово, а буквы говорят сами за себя.
+export function detectLang(term) {
+  if (/[\u0590-\u05FF]/.test(term)) return "he";
+  if (/[\u0400-\u04FF]/.test(term)) return "ru";
+  return "en";
+}
+
 export const Word = sequelize.define("Word", {
   term: { type: DataTypes.STRING(200), allowNull: false },
   // The Hebrew explanation — the point of the whole thing. Empty is allowed:
@@ -36,6 +44,8 @@ export const Word = sequelize.define("Word", {
   // The day this word was the word of the day, so it is not picked twice.
   dayPickedAt: { type: DataTypes.DATEONLY, allowNull: true },
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
+  // Списки языков раздельные: иврит учится отдельно от английского.
+  lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });

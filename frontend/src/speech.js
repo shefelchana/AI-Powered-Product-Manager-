@@ -2,10 +2,13 @@
 // Голоса зависят от устройства — если ивритского нет, кнопку не показываем.
 export const canSpeak = () => typeof window !== "undefined" && "speechSynthesis" in window;
 
-export function speak(text) {
+const VOICES = { he: "he-IL", en: "en-US", ru: "ru-RU" };
+
+export function speak(text, lang = "he") {
   if (!canSpeak()) return;
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "he-IL";
+  // Голос по языку слова: ивритским голосом «merger» читается кашей.
+  utterance.lang = VOICES[lang] ?? VOICES.he;
   utterance.rate = 0.85;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);

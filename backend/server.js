@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { Op } from "sequelize";
 import { sequelize, dbKind } from "./db.js";
-import { Word, INTERVALS, LAST_BOX, dayOffset, today } from "./models.js";
+import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { lookup } from "./academy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,10 @@ function clean(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+const langOf = (req) => (["he", "en", "ru"].includes(req.query.lang) ? req.query.lang : "he");
+
+// Весь список отдаём целиком: по нему считаются счётчики всех языков,
+// а разделение делает фронт. Очередь и слово дня фильтруем на сервере.
 app.get("/api/words", async (req, res) => {
   const words = await Word.findAll({ order: [["createdAt", "DESC"]] });
   res.json(words);
@@ -45,7 +49,7 @@ app.get("/api/words", async (req, res) => {
 app.get("/api/words/due", async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || SESSION_LIMIT, SESSION_LIMIT);
   const words = await Word.findAll({
-    where: { nextDue: { [Op.lte]: today() } },
+    where: { nextDue: { [Op.lte]: today() }, lang: langOf(req) },
     order: [["box", "ASC"], ["createdAt", "ASC"]],
     limit,
   });
@@ -66,6 +70,7 @@ app.post("/api/words", async (req, res) => {
   const definition = clean(req.body?.definition, MAX_DEFINITION);
   const word = await Word.create({
     term,
+    lang: detectLang(term),
     definition,
     definitionSource: definition ? "typed" : "",
     translation: clean(req.body?.translation, MAX_TERM),
@@ -89,6 +94,7 @@ app.patch("/api/words/:id", async (req, res) => {
       return res.status(409).json({ error: "Такое слово уже есть", word: clash });
     }
     word.term = term;
+    word.lang = detectLang(term);
   }
   if (req.body?.definition !== undefined) {
     const definition = clean(req.body.definition, MAX_DEFINITION);
@@ -125,11 +131,12 @@ app.patch("/api/words/:id/review", async (req, res) => {
 // Слово дня: одно слово, с которым живёшь весь день. Берём из плохо знакомых
 // (коробки 1-2) и не повторяем то, что уже было — техника про новое слово.
 app.get("/api/word-of-day", async (req, res) => {
-  const picked = await Word.findOne({ where: { dayPickedAt: today() } });
+  const lang = langOf(req);
+  const picked = await Word.findOne({ where: { dayPickedAt: today(), lang } });
   if (picked) return res.json(picked);
 
   const candidates = await Word.findAll({
-    where: { box: { [Op.lte]: 2 } },
+    where: { box: { [Op.lte]: 2 }, lang },
     order: [["createdAt", "ASC"]],
   });
   if (candidates.length === 0) return res.json(null);
@@ -196,6 +203,15 @@ if (process.env.NODE_ENV === "production") {
 }
 
 await sequelize.sync({ alter: true });
+
+// Слова, заведённые до появления языков, метим по написанию.
+for (const word of await Word.findAll()) {
+  const lang = detectLang(word.term);
+  if (word.lang !== lang) {
+    word.lang = lang;
+    await word.save();
+  }
+}
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT} (db: ${dbKind})`);

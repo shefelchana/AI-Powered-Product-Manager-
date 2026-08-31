@@ -361,3 +361,26 @@ button {
 .source a {
   color: #9aa3b2;
 }
+
+/* ---------- языки ---------- */
+
+.langs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.lang {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.9rem;
+  color: #9aa3b2;
+  background: transparent;
+  border: 1px solid #2b2f37;
+}
+
+.lang.active {
+  color: #14161a;
+  background: #6ea8fe;
+  border-color: transparent;
+  font-weight: 600;
+}

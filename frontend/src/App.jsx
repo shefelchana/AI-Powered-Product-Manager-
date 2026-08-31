@@ -4,6 +4,9 @@ import { canSpeak, speak } from "./speech.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
+const dirOf = (lang) => (lang === "he" ? "rtl" : "ltr");
+const LANGS = { he: "עברית", en: "English", ru: "Русский" };
+
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
 
 // Откуда объяснение — видно всегда. Академия даёт терминологическую справку,
@@ -21,10 +24,10 @@ function SourceNote({ word }) {
   );
 }
 
-function SpeakButton({ text }) {
+function SpeakButton({ text, lang }) {
   if (!canSpeak()) return null;
   return (
-    <button className="speak" onClick={() => speak(text)} aria-label="Прочитать вслух">
+    <button className="speak" onClick={() => speak(text, lang)} aria-label="Прочитать вслух">
       🔊
     </button>
   );
@@ -40,6 +43,7 @@ function Help() {
         <li><strong>Каждый день</strong> — вкладка «Слово дня»: одно слово, с которым живёшь весь день. Придумал фразу — записал. Фразы потом всплывают на повторении.</li>
         <li><strong>Повторение</strong> — «Повторять»: не больше 10 слов за раз. Сначала вспомни сам, потом открывай. Нет сил — есть кнопка на три слова.</li>
       </ol>
+      <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать. Английское слово можно спросить у Академии — она двуязычная и вернёт официальный ивритский эквивалент.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
     </div>
   );
@@ -49,19 +53,19 @@ function Help() {
 
 // Одно слово на день, с которым живёшь: прикладываешь его к своим ситуациям,
 // пока оно не побывает в десятке разных контекстов.
-function DayScreen({ onChanged }) {
+function DayScreen({ lang, onChanged }) {
   const [word, setWord] = useState(undefined);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      setWord(await wordOfDay());
+      setWord(await wordOfDay(lang));
       setError(null);
     } catch (err) {
       setError(err.message);
     }
-  }, []);
+  }, [lang]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -88,8 +92,8 @@ function DayScreen({ onChanged }) {
   return (
     <div className="day">
       <p className="field-label">Слово дня</p>
-      <p className="day-term" dir="rtl">
-        {word.term} <SpeakButton text={word.term} />
+      <p className="day-term" dir={dirOf(word.lang)}>
+        {word.term} <SpeakButton text={word.term} lang={word.lang} />
       </p>
       <p className="muted">Прочитай вслух — так запоминается лучше</p>
 
@@ -100,7 +104,7 @@ function DayScreen({ onChanged }) {
         <label className="field-label" htmlFor="example">Твоя фраза с этим словом</label>
         <textarea
           id="example"
-          dir="rtl"
+          dir={dirOf(word.lang)}
           rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -231,7 +235,7 @@ function ReviewScreen({ queue, onFinished }) {
         <span className="muted">{index + 1} из {queue.length}</span>
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
-      <p className="review-term" dir="rtl">{word.term} <SpeakButton text={word.term} /></p>
+      <p className="review-term" dir={dirOf(word.lang)}>{word.term} <SpeakButton text={word.term} lang={word.lang} /></p>
       <p className="muted">Прочитай вслух, потом вспоминай</p>
 
       {revealed === 0 && (
@@ -301,7 +305,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
   if (!open) {
     return (
       <button className="word-row" onClick={onToggle}>
-        <span className="word-row-term" dir="rtl">{word.term}</span>
+        <span className="word-row-term" dir={dirOf(word.lang)}>{word.term}</span>
         <span className="muted">
           {word.definition ? `коробка ${word.box}` : "без объяснения"}
         </span>
@@ -407,6 +411,7 @@ export default function App() {
   const [db, setDb] = useState("");
   const [view, setView] = useState("add");
   const [showHelp, setShowHelp] = useState(false);
+  const [lang, setLang] = useState("he");
   const [queue, setQueue] = useState([]);
   const [error, setError] = useState(null);
 
@@ -429,14 +434,19 @@ export default function App() {
       .catch(() => setDb(""));
   }, []);
 
-  const dueCount = words.filter(isDue).length;
-  const pending = words.filter((word) => !word.definition).length;
-  const learned = words.filter((word) => word.box === 5).length;
-  const phrases = words.reduce((sum, word) => sum + exampleList(word).length, 0);
+  // Списки языков раздельные: иврит учится отдельно от английского.
+  const mine = words.filter((word) => word.lang === lang);
+  const counts = words.reduce((acc, word) => ({ ...acc, [word.lang]: (acc[word.lang] ?? 0) + 1 }), {});
+  const otherLangs = Object.keys(LANGS).filter((code) => code !== lang && counts[code]);
+
+  const dueCount = mine.filter(isDue).length;
+  const pending = mine.filter((word) => !word.definition).length;
+  const learned = mine.filter((word) => word.box === 5).length;
+  const phrases = mine.reduce((sum, word) => sum + exampleList(word).length, 0);
 
   async function startReview(limit) {
     try {
-      setQueue(await dueWords(limit));
+      setQueue(await dueWords(limit, lang));
       setView("review");
     } catch (err) {
       setError(err.message);
@@ -450,6 +460,22 @@ export default function App() {
       <button className="quiet help-toggle" onClick={() => setShowHelp(!showHelp)}>
         {showHelp ? "Свернуть инструкцию" : "Как этим пользоваться"}
       </button>
+
+      {otherLangs.length > 0 && (
+        <nav className="langs">
+          {Object.keys(LANGS)
+            .filter((code) => counts[code])
+            .map((code) => (
+              <button
+                key={code}
+                className={code === lang ? "lang active" : "lang"}
+                onClick={() => { setLang(code); setView("add"); }}
+              >
+                {LANGS[code]} ({counts[code]})
+              </button>
+            ))}
+        </nav>
+      )}
 
       <p className="counters">
         К повторению: <strong>{dueCount}</strong> · выучено: <strong>{learned}</strong> · своих фраз: <strong>{phrases}</strong>
@@ -468,7 +494,7 @@ export default function App() {
             Повторять
           </button>
           <button className={view === "words" ? "tab active" : "tab"} onClick={() => setView("words")}>
-            Слова ({words.length})
+            Слова ({mine.length})
           </button>
         </nav>
       )}
@@ -483,9 +509,9 @@ export default function App() {
 
       {(showHelp || words.length === 0) && <Help />}
 
-      {view === "day" && <DayScreen onChanged={reload} />}
+      {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={words} onChanged={reload} />}
+      {view === "words" && <WordsScreen words={mine} onChanged={reload} />}
       {view === "review" && (
         <ReviewScreen
           queue={queue}
