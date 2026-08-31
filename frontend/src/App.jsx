@@ -456,6 +456,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [choices, setChoices] = useState([]);
 
   // Слово могло измениться на сервере — например, справка пришла из Академии.
   // Без этого в полях остаётся старый черновик и следующее «Сохранить»
@@ -466,7 +467,9 @@ function WordRow({ word, open, onToggle, onChanged }) {
     setBusy(true);
     setError(null);
     try {
-      await action();
+      const result = await action();
+      // Точного совпадения в Академии нет — выбирает человек.
+      setChoices(result?.candidates ?? []);
       await onChanged();
     } catch (err) {
       setError(err.message);
@@ -542,6 +545,24 @@ function WordRow({ word, open, onToggle, onChanged }) {
           <button className="secondary" onClick={() => setConfirming(true)}>Удалить</button>
         )}
       </div>
+
+      {choices.length > 0 && (
+        <div className="choices">
+          <p className="muted">Точного совпадения нет. Что из этого?</p>
+          {choices.map((choice) => (
+            <button
+              key={choice.href}
+              className="secondary"
+              dir="rtl"
+              disabled={busy}
+              onClick={() => run(() => fromAcademy(word.id, choice.href))}
+            >
+              {choice.display}
+            </button>
+          ))}
+          <button className="quiet" onClick={() => setChoices([])}>Ничего не подходит</button>
+        </div>
+      )}
 
       {error && <p className="error">{error}</p>}
       <button className="quiet" onClick={onToggle}>Свернуть</button>

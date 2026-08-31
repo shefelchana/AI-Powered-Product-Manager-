@@ -4,7 +4,7 @@ import express from "express";
 import { Op } from "sequelize";
 import { sequelize, dbKind } from "./db.js";
 import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
-import { lookup } from "./academy.js";
+import { fetchRecord, isTermPath, lookup } from "./academy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -177,14 +177,25 @@ app.post("/api/words/:id/academy", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
+  // href приходит с клиента — принимаем только адреса страниц терминов,
+  // иначе сервер сходит куда угодно по чужой указке.
+  const href = req.body?.href;
+  if (href !== undefined && !isTermPath(href)) {
+    return res.status(400).json({ error: "Неизвестный адрес записи" });
+  }
+
   let found;
   try {
-    found = await lookup(word.term);
+    found = href ? await fetchRecord(href) : await lookup(word.term);
   } catch (error) {
     return res.status(502).json({ error: `База Академии недоступна: ${error.message}` });
   }
   if (!found) {
     return res.status(404).json({ error: "В базе Академии такого слова нет" });
+  }
+  // Точного совпадения нет — выбирает человек, молча подставлять похожее нельзя.
+  if (found.candidates) {
+    return res.json({ candidates: found.candidates });
   }
 
   word.definition = found.definition;

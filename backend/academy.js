@@ -11,6 +11,36 @@ const MAX_ENTRIES = 3;
 
 const stripNiqqud = (text) => text.replace(/[֑-ׇ]/g, "").trim();
 
+// Приставки иврита: слово, записанное с лекции как «המיזוג», в словаре
+// не найдётся — там оно лежит как «מיזוג».
+const PREFIXES = new Set(["ו", "ה", "ב", "כ", "ל", "מ", "ש"]);
+
+// Что пробовать искать и в каком порядке: сначала как написано, потом
+// без одной приставки, потом без двух. Остаток короче трёх букв не пробуем:
+// у מים («вода») отрезание первой буквы даёт ים («море») — другое настоящее
+// слово, и оно молча подставилось бы вместо искомого.
+export function searchVariants(term) {
+  const clean = stripNiqqud(String(term ?? ""));
+  const variants = [clean];
+  let rest = clean;
+  for (let i = 0; i < 2; i += 1) {
+    if (!PREFIXES.has(rest[0]) || rest.length - 1 < 3) break;
+    rest = rest.slice(1);
+    variants.push(rest);
+  }
+  return variants.filter(Boolean);
+}
+
+// В выдаче Академии ярлыки в огласованном письме («מזוג»), а записывают слова
+// в обычном («מיזוג») — разница в буквах-матерях чтения. Для сопоставления
+// с выдачей их отбрасываем. В проверке ответов такое сравнение недопустимо:
+// там оно уравняло бы שיר и שר. Здесь риск мал — кандидаты пришли по запросу
+// этого же слова, и совпадение должно остаться единственным.
+const bare = (text) => stripNiqqud(text).replace(/[יו]/g, "");
+
+// Ссылки из выдачи принимаем только свои: адрес приходит с клиента.
+export const isTermPath = (href) => /^\/munnah\/[0-9]+_[0-9]+$/.test(String(href ?? ""));
+
 const unescapeHtml = (text) =>
   text
     .replace(/&quot;/g, '"')
@@ -28,18 +58,21 @@ async function fetchText(url) {
   return res.text();
 }
 
-// Из страницы поиска берём ссылку на термин: точное совпадение без огласовок,
-// иначе первое в списке.
-function pickTerm(html, term) {
-  const links = [...html.matchAll(/<a[^>]*href="(\/munnah\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(
-    (match) => ({
-      href: match[1],
-      label: stripNiqqud(match[2].replace(/<[^>]+>/g, " ")),
+function linksOf(html) {
+  const seen = new Set();
+  return [...html.matchAll(/<a[^>]*href="(\/munnah\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g)]
+    .map((match) => {
+      const text = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return {
+        href: match[1],
+        // Для сопоставления — без огласовок; для показа — с ними: два разных
+        // слова могут писаться одинаково и различаться только огласовкой
+        // (חִבְרוּת «социализация» и חֲבֵרוּת «членство»).
+        label: stripNiqqud(text),
+        display: text,
+      };
     })
-  );
-  if (links.length === 0) return null;
-  const wanted = stripNiqqud(term);
-  return links.find((link) => link.label === wanted) ?? links[0];
+    .filter((link) => link.label && !seen.has(link.href) && seen.add(link.href));
 }
 
 function parseEntries(html) {
@@ -59,14 +92,34 @@ function parseEntries(html) {
   }));
 }
 
-// null означает «в базе Академии такого нет» — это не ошибка, а ответ.
+// Возвращает запись только при точном совпадении. Раньше при промахе бралась
+// первая ссылка из выдачи — и на «רכישת» приходило «רְכִישַׁת נְתוּנִים —
+// data acquisition»: правдоподобная запись с настоящей подписью Академии,
+// но не про то слово. Молчаливая подмена хуже отсутствия ответа.
+// Нет точного совпадения — отдаём варианты, выбирает человек.
 export async function lookup(term) {
-  const search = await fetchText(`${BASE}/?Filter.SearchString=${encodeURIComponent(term)}`);
-  const chosen = pickTerm(search, term);
-  if (!chosen) return null;
+  let candidates = [];
 
-  const entries = parseEntries(await fetchText(BASE + chosen.href));
+  for (const variant of searchVariants(term)) {
+    const links = linksOf(await fetchText(`${BASE}/?Filter.SearchString=${encodeURIComponent(variant)}`));
+    if (links.length === 0) continue;
+
+    const exact = links.filter((link) => link.label === variant);
+    if (exact.length === 1) return fetchRecord(exact[0].href);
+
+    const loose = exact.length > 0 ? exact : links.filter((link) => bare(link.label) === bare(variant));
+    if (loose.length === 1) return fetchRecord(loose[0].href);
+
+    if (candidates.length === 0) candidates = (loose.length > 0 ? loose : links).slice(0, 5);
+  }
+
+  return candidates.length > 0 ? { candidates } : null;
+}
+
+export async function fetchRecord(href) {
+  const entries = parseEntries(await fetchText(BASE + href));
   if (entries.length === 0) return null;
+  const chosen = { href };
 
   // Записи из разных словарей часто повторяют друг друга: одна даёт
   // "merger, amalgamation", следующая — только "merger". Оставляем те, что

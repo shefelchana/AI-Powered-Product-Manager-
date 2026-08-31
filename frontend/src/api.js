@@ -38,6 +38,7 @@ export const reviewWord = (id, known) =>
   request(`/api/words/${id}/review`, json("PATCH", { known }));
 export const wordOfDay = (lang) => request(`/api/word-of-day?lang=${lang}`);
 export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE" });
-export const fromAcademy = (id) => request(`/api/words/${id}/academy`, { method: "POST" });
+export const fromAcademy = (id, href) =>
+  request(`/api/words/${id}/academy`, json("POST", href ? { href } : {}));
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));

@@ -61,8 +61,8 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api` to the backend 
 Pure functions only, on Node's built-in runner — no dependencies to install:
 
 ```bash
-cd frontend
-node --test src/recall.test.js
+cd backend  && node --test academy.test.js
+cd frontend && node --test src/recall.test.js
 ```
 
 ## Deploy to Render

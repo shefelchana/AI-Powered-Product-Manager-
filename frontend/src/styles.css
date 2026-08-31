@@ -434,3 +434,17 @@ button {
   color: #9aa3b2;
   margin: 0.2rem 0 1rem;
 }
+
+/* ---------- выбор записи в Академии ---------- */
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.choices button {
+  margin: 0;
+  font-size: 1.15rem;
+}
