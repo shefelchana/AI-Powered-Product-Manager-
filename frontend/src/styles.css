@@ -448,3 +448,28 @@ button {
   margin: 0;
   font-size: 1.15rem;
 }
+
+/* ---------- картинка и режим на слух ---------- */
+
+.word-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  background: #1d2026;
+}
+
+.listen {
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+.listen-again {
+  font-size: 3.5rem;
+  padding: 1rem 2rem;
+  color: #e8eaed;
+  background: #1d2026;
+  border: 1px solid #2b2f37;
+}

@@ -111,6 +111,9 @@ app.patch("/api/words/:id", async (req, res) => {
   if (req.body?.translation !== undefined) {
     word.translation = clean(req.body.translation, MAX_TERM);
   }
+  if (req.body?.imageUrl !== undefined) {
+    word.imageUrl = clean(req.body.imageUrl, 600);
+  }
   await word.save();
   res.json(word);
 });

@@ -25,6 +25,17 @@ function SourceNote({ word }) {
   );
 }
 
+// Картинка идёт первой, до текста: образ цепляется лучше слова.
+// Адрес внешний и может протухнуть — тогда просто ничего не показываем.
+function WordImage({ word }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [word.imageUrl]);
+  if (!word.imageUrl || broken) return null;
+  return (
+    <img className="word-image" src={word.imageUrl} alt={word.term} onError={() => setBroken(true)} />
+  );
+}
+
 function SpeakButton({ text, lang }) {
   if (!canSpeak()) return null;
   return (
@@ -103,6 +114,7 @@ function Help({ lang }) {
         <li><strong>Каждый день</strong> — вкладка «Слово дня»: одно слово, с которым живёшь весь день. Придумал фразу — записал. Фразы потом всплывают на повторении.</li>
         <li><strong>Повторение</strong> — «Повторять»: не больше 10 слов за раз. Сначала вспомни сам, потом открывай. Нет сил — есть кнопка на три слова.</li>
       </ol>
+      <p className="muted">К слову можно добавить <strong>картинку</strong> — свой яркий образ, а не первую попавшуюся: слово с образом цепляется заметно лучше. А «Повторять на слух» прячет написание и сначала произносит слово — так ухо привыкает к звукам языка.</p>
       <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать. Английское слово можно спросить у Академии — она двуязычная и вернёт официальный ивритский эквивалент.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
       <VoicePicker lang={lang} />
@@ -153,6 +165,7 @@ function DayScreen({ lang, onChanged }) {
   return (
     <div className="day">
       <p className="field-label">Слово дня</p>
+      <WordImage word={word} />
       <p className="day-term" dir={dirOf(word.lang)}>
         {word.term} <SpeakButton text={word.term} lang={word.lang} />
       </p>
@@ -343,11 +356,32 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
   );
 }
 
-function RevealCard({ word, onAnswer }) {
+function RevealCard({ word, onAnswer, listen }) {
   const [revealed, setRevealed] = useState(0);
+  // На слух слово сначала звучит и не показывается: мозг должен привыкнуть
+  // к звукам языка, иначе он отбрасывает их как шум.
+  const [termShown, setTermShown] = useState(!listen);
+
+  useEffect(() => {
+    if (listen) speak(word.term, word.lang, savedVoice(word.lang));
+  }, [word.id]);
+
+  if (!termShown) {
+    return (
+      <div className="listen">
+        <WordImage word={word} />
+        <button className="listen-again" onClick={() => speak(word.term, word.lang, savedVoice(word.lang))}>
+          🔊
+        </button>
+        <p className="muted">Послушай и вспомни слово</p>
+        <button className="primary" onClick={() => setTermShown(true)}>Показать слово</button>
+      </div>
+    );
+  }
 
   return (
     <>
+      <WordImage word={word} />
       <p className="review-term" dir={dirOf(word.lang)}>
         {word.term} <SpeakButton text={word.term} lang={word.lang} />
       </p>
@@ -389,7 +423,7 @@ function RevealCard({ word, onAnswer }) {
   );
 }
 
-function ReviewScreen({ queue, onFinished }) {
+function ReviewScreen({ queue, onFinished, listen }) {
   const [cards, setCards] = useState(queue);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -423,7 +457,9 @@ function ReviewScreen({ queue, onFinished }) {
 
   // Строгий режим работает там, где есть своя фраза с этим словом.
   // Нет фразы — сверять не с чем, остаётся раскрытие.
-  const cloze = clozeFor(word);
+  // На слух строгий ввод выключен: слушать и писать одновременно — уже другое
+  // упражнение. На слух тренируется узнавание, строгий режим — воспроизведение.
+  const cloze = listen ? null : clozeFor(word);
 
   return (
     <div className="review">
@@ -441,7 +477,7 @@ function ReviewScreen({ queue, onFinished }) {
           onRequeue={requeue}
         />
       ) : (
-        <RevealCard key={word.id} word={word} onAnswer={answer} />
+        <RevealCard key={word.id} word={word} onAnswer={answer} listen={listen} />
       )}
 
       {error && <p className="error">{error}</p>}
@@ -513,6 +549,23 @@ function WordRow({ word, open, onToggle, onChanged }) {
         value={draft.translation}
         onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
       />
+
+      <label className="field-label">Картинка</label>
+      <WordImage word={word} />
+      <input
+        dir="ltr"
+        placeholder="адрес картинки"
+        value={draft.imageUrl ?? ""}
+        onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
+      />
+      <a
+        className="quiet"
+        href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(word.term)}`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Найти образ — выбери тот, что запал, а не первый попавшийся
+      </a>
 
       <div className="row-actions">
         <button
@@ -607,6 +660,7 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [lang, setLang] = useState("he");
   const [queue, setQueue] = useState([]);
+  const [listen, setListen] = useState(false);
   const [error, setError] = useState(null);
 
   const reload = useCallback(async () => {
@@ -638,9 +692,10 @@ export default function App() {
   const learned = mine.filter((word) => word.box === 5).length;
   const phrases = mine.reduce((sum, word) => sum + exampleList(word).length, 0);
 
-  async function startReview(limit) {
+  async function startReview(limit, byEar = false) {
     try {
       setQueue(await dueWords(limit, lang));
+      setListen(byEar);
       setView("review");
     } catch (err) {
       setError(err.message);
@@ -699,6 +754,13 @@ export default function App() {
         </button>
       )}
 
+      {/* Вход в сессию, а не настройка: настройка была бы лишним решением. */}
+      {view !== "review" && dueCount > 0 && canSpeak() && (
+        <button className="quiet" onClick={() => startReview(10, true)}>
+          Повторять на слух
+        </button>
+      )}
+
       {error && <p className="error">{error}</p>}
 
       {(showHelp || words.length === 0) && <Help lang={lang} />}
@@ -709,6 +771,7 @@ export default function App() {
       {view === "review" && (
         <ReviewScreen
           queue={queue}
+          listen={listen}
           onFinished={() => { setView("add"); reload(); }}
         />
       )}

@@ -38,6 +38,9 @@ export const Word = sequelize.define("Word", {
   sourceLabel: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   sourceUrl: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   translation: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
+  // Свой яркий образ к слову: звук и опыт уже есть, картинка — третья часть.
+  // Адрес внешний, значит может протухнуть — показ переживает битую ссылку.
+  imageUrl: { type: DataTypes.STRING(600), allowNull: false, defaultValue: "" },
   // Your own phrases with this word, one per line. A word learned inside a
   // sentence you lived through sticks; a word learned in a column does not.
   examples: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
