@@ -1,8 +1,92 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addWord, dueWords, listWords, reviewWord, updateWord } from "./api.js";
+import { addExample, addWord, dueWords, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
+import { canSpeak, speak } from "./speech.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
+const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
+
+function SpeakButton({ text }) {
+  if (!canSpeak()) return null;
+  return (
+    <button className="speak" onClick={() => speak(text)} aria-label="Прочитать вслух">
+      🔊
+    </button>
+  );
+}
+
+// ---------- слово дня ----------
+
+// Одно слово на день, с которым живёшь: прикладываешь его к своим ситуациям,
+// пока оно не побывает в десятке разных контекстов.
+function DayScreen({ onChanged }) {
+  const [word, setWord] = useState(undefined);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setWord(await wordOfDay());
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (word === undefined) return <p className="muted">Загружаю…</p>;
+  if (word === null) {
+    return <p className="muted">Пока нет слов из первых коробок. Добавь слово — оно и станет словом дня.</p>;
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setError(null);
+    try {
+      setWord(await addExample(word.id, draft));
+      setDraft("");
+      onChanged();
+    } catch (err) {
+      // Фразу не стираем: её придумывали.
+      setError(err.message);
+    }
+  }
+
+  const examples = exampleList(word);
+
+  return (
+    <div className="day">
+      <p className="field-label">Слово дня</p>
+      <p className="day-term" dir="rtl">
+        {word.term} <SpeakButton text={word.term} />
+      </p>
+      <p className="muted">Прочитай вслух — так запоминается лучше</p>
+
+      {word.definition && <p className="definition" dir="rtl">{word.definition}</p>}
+
+      <form onSubmit={submit}>
+        <label className="field-label" htmlFor="example">Твоя фраза с этим словом</label>
+        <textarea
+          id="example"
+          dir="rtl"
+          rows={2}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button className="primary" type="submit">Добавить фразу</button>
+      </form>
+
+      {error && <p className="error">{error}</p>}
+
+      {examples.length > 0 && (
+        <ul className="examples">
+          {examples.map((line, i) => <li key={i} dir="rtl">{line}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // ---------- добавить слово ----------
 
@@ -116,7 +200,8 @@ function ReviewScreen({ queue, onFinished }) {
         <span className="muted">{index + 1} из {queue.length}</span>
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
-      <p className="review-term" dir="rtl">{word.term}</p>
+      <p className="review-term" dir="rtl">{word.term} <SpeakButton text={word.term} /></p>
+      <p className="muted">Прочитай вслух, потом вспоминай</p>
 
       {revealed === 0 && (
         <button className="primary" onClick={() => setRevealed(1)}>Показать объяснение</button>
@@ -131,6 +216,11 @@ function ReviewScreen({ queue, onFinished }) {
           )}
           {word.definitionSource === "generated" && (
             <p className="muted">⚠️ сгенерировано, проверь</p>
+          )}
+          {exampleList(word).length > 0 && (
+            <ul className="examples">
+              {exampleList(word).map((line, i) => <li key={i} dir="rtl">{line}</li>)}
+            </ul>
           )}
         </div>
       )}
@@ -223,6 +313,7 @@ export default function App() {
   const dueCount = words.filter(isDue).length;
   const pending = words.filter((word) => !word.definition);
   const learned = words.filter((word) => word.box === 5).length;
+  const phrases = words.reduce((sum, word) => sum + exampleList(word).length, 0);
 
   async function startReview(limit) {
     try {
@@ -238,19 +329,19 @@ export default function App() {
       <h1>Слова с занятий</h1>
 
       <p className="counters">
-        К повторению: <strong>{dueCount}</strong> · выучено: <strong>{learned}</strong>
+        К повторению: <strong>{dueCount}</strong> · выучено: <strong>{learned}</strong> · своих фраз: <strong>{phrases}</strong>
       </p>
 
       {view !== "review" && (
         <nav className="nav">
+          <button className={view === "day" ? "tab active" : "tab"} onClick={() => setView("day")}>
+            Слово дня
+          </button>
           <button className={view === "add" ? "tab active" : "tab"} onClick={() => setView("add")}>
             Добавить
           </button>
           <button className="tab" onClick={() => startReview(10)} disabled={dueCount === 0}>
             Повторять
-          </button>
-          <button className="tab" onClick={() => startReview(3)} disabled={dueCount === 0}>
-            Только 3
           </button>
           <button className={view === "fill" ? "tab active" : "tab"} onClick={() => setView("fill")}>
             Разобрать ({pending.length})
@@ -258,8 +349,15 @@ export default function App() {
         </nav>
       )}
 
+      {view !== "review" && dueCount > 3 && (
+        <button className="quiet" onClick={() => startReview(3)}>
+          Нет сил — только 3 слова
+        </button>
+      )}
+
       {error && <p className="error">{error}</p>}
 
+      {view === "day" && <DayScreen onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "fill" && <FillScreen words={pending} onSaved={reload} />}
       {view === "review" && (

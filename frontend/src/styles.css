@@ -243,3 +243,41 @@ button {
   font-size: 0.8rem;
   color: #5f6773;
 }
+
+/* ---------- слово дня ---------- */
+
+.day-term {
+  font-size: 2.4rem;
+  line-height: 1.4;
+  margin: 0.5rem 0;
+}
+
+.speak {
+  padding: 0.2rem 0.5rem;
+  font-size: 1.2rem;
+  background: transparent;
+  border: 1px solid #2b2f37;
+  vertical-align: middle;
+}
+
+.examples {
+  margin: 1.25rem 0 0;
+  padding-inline-start: 1.1rem;
+}
+
+/* Порог входа должен быть смехотворно низким — но и не мозолить глаза,
+   пока очередь маленькая. */
+.quiet {
+  display: block;
+  margin: -0.75rem 0 1.25rem;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  color: #9aa3b2;
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+}
+
+.examples li {
+  margin-bottom: 0.6rem;
+}
