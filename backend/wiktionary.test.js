@@ -52,3 +52,23 @@ usury`;
   assert.equal(entry.translit, "ribít");
   assert.equal(entry.gloss, "interest (price of credit)");
 });
+
+test("несколько частей речи в ивритском разделе — неоднозначность, возвращается null", () => {
+  // Слепок в стиле реальной статьи «חנוכה»: Proper noun и Noun — каждая со своей
+  // строкой «•» и своим значением. Угадывать нужную часть речи нельзя — правило
+  // то же, что и у Академии: несколько вариантов = не выбираем, «нет данных».
+  const two = `== Hebrew ==
+
+=== Proper noun ===
+
+חֲנֻכָּה • (khanuká) f
+
+(Judaism) Hanukkah
+
+=== Noun ===
+
+חֲנֻכָּה • (khanuká) f
+
+consecration, dedication, inauguration`;
+  assert.equal(parseEntry(two), null);
+});

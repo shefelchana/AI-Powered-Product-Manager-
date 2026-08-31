@@ -12,9 +12,18 @@ export function parseEntry(extract) {
   const end = rest.findIndex((line) => /^==\s*[^=].*==$/.test(line.trim()));
   const section = end === -1 ? rest : rest.slice(0, end);
 
-  // Заголовочная строка статьи — единственная с «•».
-  const headIndex = section.findIndex((line) => line.includes("•"));
-  if (headIndex === -1) return null;
+  // Заголовочная строка статьи — единственная с «•». Если частей речи несколько
+  // (например, «חנוכה»: и Proper noun, и Noun — у каждой своя строка «•» и своё
+  // значение), угадывать нужную нельзя. Правило то же, что у Академии для
+  // нескольких вариантов: неоднозначность не разрешаем автоматически, отдаём
+  // «нет данных» — безопаснее ошибиться в сторону «не нашли», чем подставить
+  // значение не той части речи.
+  const headIndices = section.reduce((acc, line, i) => {
+    if (line.includes("•")) acc.push(i);
+    return acc;
+  }, []);
+  if (headIndices.length !== 1) return null;
+  const headIndex = headIndices[0];
   const head = section[headIndex].trim();
 
   const vocalized = head.split("•")[0].trim();
