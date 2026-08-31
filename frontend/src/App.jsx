@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, deleteWord, dueWords, fromAcademy, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
+import { clozeFor, matches } from "./recall.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
@@ -261,41 +262,95 @@ function AddScreen({ onAdded }) {
 
 // ---------- повторение ----------
 
-function ReviewScreen({ queue, onFinished }) {
-  // Выход есть всегда: застрять в очереди нельзя.
-  const [index, setIndex] = useState(0);
-  const [revealed, setRevealed] = useState(0);
-  const [error, setError] = useState(null);
-  const word = queue[index];
+// Строгий режим: сначала пишешь ответ, потом видишь правильный. Узнавание
+// ощущается как знание, поэтому «показал и решил, что знал» — не проверка.
+function StrictCard({ word, cloze, onAnswer, onRequeue }) {
+  const [typed, setTyped] = useState("");
+  const [result, setResult] = useState(null);
 
-  if (!word) {
-    return (
-      <div className="done">
-        <p className="done-title">На сегодня хватит</p>
-        <p className="muted">Повторено слов: {queue.length}</p>
-        <button className="primary" onClick={onFinished}>Вернуться</button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (result !== "ok") return undefined;
+    // Короткая пауза, чтобы «верно» успело попасться на глаза.
+    const timer = setTimeout(() => onAnswer(true), 800);
+    return () => clearTimeout(timer);
+  }, [result]);
 
-  async function answer(known) {
-    setError(null);
-    try {
-      await reviewWord(word.id, known);
-      setRevealed(0);
-      setIndex(index + 1);
-    } catch (err) {
-      setError(err.message);
-    }
+  function check(event) {
+    event.preventDefault();
+    setResult(matches(typed, cloze.answer) ? "ok" : "miss");
   }
 
   return (
-    <div className="review">
-      <p className="review-head">
-        <span className="muted">{index + 1} из {queue.length}</span>
-        <button className="exit" onClick={onFinished}>Выйти</button>
+    <div className="strict">
+      <p className="cloze" dir={dirOf(word.lang)}>{cloze.prompt}</p>
+
+      {result === null && (
+        <form onSubmit={check}>
+          <input
+            className="term-input"
+            dir={dirOf(word.lang)}
+            autoFocus
+            autoComplete="off"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+          <button className="primary" type="submit">Проверить</button>
+          <button className="quiet" type="button" onClick={() => setResult("gaveup")}>
+            Не помню
+          </button>
+        </form>
+      )}
+
+      {result === "ok" && (
+        <div className="verdict">
+          <p className="ok">Верно ✓</p>
+          <p className="review-term" dir={dirOf(word.lang)}>
+            {cloze.answer} <SpeakButton text={word.term} lang={word.lang} />
+          </p>
+        </div>
+      )}
+
+      {result !== null && result !== "ok" && (
+        <div className="verdict">
+          {result === "miss" && (
+            <>
+              {/* Подпись и сам ответ — разные направления письма: одной строкой
+                  двоеточие уезжает в конец и читается как мусор. */}
+              <p className="muted">Ты написала:</p>
+              <p className="typed" dir={dirOf(word.lang)}>{typed}</p>
+            </>
+          )}
+          <p className="review-term" dir={dirOf(word.lang)}>
+            {cloze.answer} <SpeakButton text={word.term} lang={word.lang} />
+          </p>
+
+          {result === "gaveup" ? (
+            <button className="primary" onClick={() => onAnswer(false)}>Дальше</button>
+          ) : (
+            <div className="verdict-actions">
+              {/* Отделяем незнание от промаха чтения — иначе дислексия
+                  превращает каждую описку в «не знаю». */}
+              {/* «Не знала» стоит первой намеренно: зелёная кнопка сверху
+                  подталкивала бы засчитывать себе знание не глядя. */}
+              <button className="answer-no" onClick={() => onAnswer(false)}>Не знала</button>
+              <button className="answer-yes" onClick={() => onAnswer(true)}>Опечатка — я знала</button>
+              <button className="quiet" onClick={onRequeue}>Показать ещё раз</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RevealCard({ word, onAnswer }) {
+  const [revealed, setRevealed] = useState(0);
+
+  return (
+    <>
+      <p className="review-term" dir={dirOf(word.lang)}>
+        {word.term} <SpeakButton text={word.term} lang={word.lang} />
       </p>
-      <p className="review-term" dir={dirOf(word.lang)}>{word.term} <SpeakButton text={word.term} lang={word.lang} /></p>
       <p className="muted">Прочитай вслух, потом вспоминай</p>
 
       {revealed === 0 && (
@@ -326,9 +381,67 @@ function ReviewScreen({ queue, onFinished }) {
 
       {revealed >= 1 && (
         <div className="answers">
-          <button className="answer-no" onClick={() => answer(false)}>Не знаю</button>
-          <button className="answer-yes" onClick={() => answer(true)}>Знаю ✓</button>
+          <button className="answer-no" onClick={() => onAnswer(false)}>Не знаю</button>
+          <button className="answer-yes" onClick={() => onAnswer(true)}>Знаю ✓</button>
         </div>
+      )}
+    </>
+  );
+}
+
+function ReviewScreen({ queue, onFinished }) {
+  const [cards, setCards] = useState(queue);
+  const [index, setIndex] = useState(0);
+  const [error, setError] = useState(null);
+  const word = cards[index];
+
+  if (!word) {
+    return (
+      <div className="done">
+        <p className="done-title">На сегодня хватит</p>
+        <p className="muted">Повторено слов: {queue.length}</p>
+        <button className="primary" onClick={onFinished}>Вернуться</button>
+      </div>
+    );
+  }
+
+  async function answer(known) {
+    setError(null);
+    try {
+      await reviewWord(word.id, known);
+      setIndex(index + 1);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  // «Показать ещё раз» — в конец очереди, без обращения к серверу: коробку
+  // меняет только настоящий ответ.
+  function requeue() {
+    setCards([...cards.slice(0, index), ...cards.slice(index + 1), word]);
+  }
+
+  // Строгий режим работает там, где есть своя фраза с этим словом.
+  // Нет фразы — сверять не с чем, остаётся раскрытие.
+  const cloze = clozeFor(word);
+
+  return (
+    <div className="review">
+      <p className="review-head">
+        <span className="muted">{index + 1} из {cards.length}</span>
+        <button className="exit" onClick={onFinished}>Выйти</button>
+      </p>
+
+      {cloze ? (
+        <StrictCard
+          key={word.id}
+          word={word}
+          cloze={cloze}
+          onAnswer={answer}
+          onRequeue={requeue}
+        />
+      ) : (
+        <RevealCard key={word.id} word={word} onAnswer={answer} />
       )}
 
       {error && <p className="error">{error}</p>}

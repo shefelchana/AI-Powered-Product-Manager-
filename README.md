@@ -56,6 +56,15 @@ npm run dev
 
 Open <http://localhost:5173>. The Vite dev server proxies `/api` to the backend on port 3001.
 
+## Tests
+
+Pure functions only, on Node's built-in runner — no dependencies to install:
+
+```bash
+cd frontend
+node --test src/recall.test.js
+```
+
 ## Deploy to Render
 
 1. Push this repo to GitHub.
