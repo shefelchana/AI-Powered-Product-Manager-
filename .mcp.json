@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vocab": {
+      "command": "node",
+      "args": ["mcp/server.js"]
+    }
+  }
+}

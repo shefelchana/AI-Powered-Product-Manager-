@@ -65,6 +65,20 @@ cd backend  && node --test academy.test.js
 cd frontend && node --test src/recall.test.js
 ```
 
+## MCP server
+
+`mcp/` exposes the vocabulary API to an agent, so words can be captured and looked up
+from a conversation instead of the web page. It runs locally and calls the deployed
+API, so nothing has to be committed or redeployed to use it.
+
+```bash
+cd mcp && npm install
+node smoke.js          # exercises all five tools over the real protocol
+```
+
+Claude Code picks it up from `.mcp.json` in the repository root; restart it after the
+first install. Point it at a local backend with `VOCAB_API_URL=http://localhost:3001`.
+
 ## Deploy to Render
 
 1. Push this repo to GitHub.
