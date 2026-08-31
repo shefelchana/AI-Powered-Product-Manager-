@@ -384,3 +384,19 @@ button {
   border-color: transparent;
   font-weight: 600;
 }
+
+/* ---------- выбор голоса ---------- */
+
+.voice-picker {
+  margin: 1rem 0 0;
+}
+
+.voice-picker select {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  color: #e8eaed;
+  background: #14161a;
+  border: 1px solid #2b2f37;
+  border-radius: 8px;
+}

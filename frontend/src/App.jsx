@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, deleteWord, dueWords, fromAcademy, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
-import { canSpeak, speak } from "./speech.js";
+import { canSpeak, speak, voicesFor } from "./speech.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
@@ -27,13 +27,72 @@ function SourceNote({ word }) {
 function SpeakButton({ text, lang }) {
   if (!canSpeak()) return null;
   return (
-    <button className="speak" onClick={() => speak(text, lang)} aria-label="Прочитать вслух">
+    <button className="speak" onClick={() => speak(text, lang, savedVoice(lang))} aria-label="Прочитать вслух">
       🔊
     </button>
   );
 }
 
-function Help() {
+// Голос — разовая настройка, живёт в браузере и на сервер не ходит.
+function savedVoice(lang) {
+  try {
+    return localStorage.getItem(`voice:${lang}`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function VoicePicker({ lang }) {
+  const [voices, setVoices] = useState([]);
+  const [chosen, setChosen] = useState(savedVoice(lang));
+
+  useEffect(() => {
+    // Список голосов приезжает не сразу — перечитываем, когда он появится.
+    const update = () => setVoices(voicesFor(lang));
+    update();
+    if (canSpeak()) {
+      window.speechSynthesis.addEventListener("voiceschanged", update);
+      return () => window.speechSynthesis.removeEventListener("voiceschanged", update);
+    }
+  }, [lang]);
+
+  // Голос один — выбирать не из чего, но его можно улучшить: системный
+  // компактный звучит механически, улучшенный ставится отдельно.
+  if (voices.length < 2) {
+    return canSpeak() ? (
+      <p className="muted voice-picker">
+        Голос звучит механически? Скачай улучшенный: <strong>Системные настройки →
+        Универсальный доступ → Устный контент → Системный голос → Управление голосами</strong>,
+        найди иврит и возьми вариант Enhanced или Premium. На iPhone —
+        Настройки → Универсальный доступ → Устный контент → Голоса.
+      </p>
+    ) : null;
+  }
+
+  function pick(name) {
+    setChosen(name);
+    try {
+      localStorage.setItem(`voice:${lang}`, name);
+    } catch {
+      // Приватный режим — просто не запомнится, озвучка работает.
+    }
+    speak("שלום", lang, name);
+  }
+
+  return (
+    <p className="voice-picker">
+      <label className="field-label" htmlFor="voice">Голос озвучки</label>
+      <select id="voice" value={chosen} onChange={(e) => pick(e.target.value)}>
+        <option value="">по умолчанию</option>
+        {voices.map((voice) => (
+          <option key={voice.name} value={voice.name}>{voice.name}</option>
+        ))}
+      </select>
+    </p>
+  );
+}
+
+function Help({ lang }) {
   return (
     <div className="help">
       <p><strong>Как этим пользоваться</strong></p>
@@ -45,6 +104,7 @@ function Help() {
       </ol>
       <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать. Английское слово можно спросить у Академии — она двуязычная и вернёт официальный ивритский эквивалент.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
+      <VoicePicker lang={lang} />
     </div>
   );
 }
@@ -507,7 +567,7 @@ export default function App() {
 
       {error && <p className="error">{error}</p>}
 
-      {(showHelp || words.length === 0) && <Help />}
+      {(showHelp || words.length === 0) && <Help lang={lang} />}
 
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
