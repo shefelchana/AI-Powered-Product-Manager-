@@ -16,11 +16,20 @@ async function request(path, options = {}) {
     throw new Error(`Приложение недоступно (${BASE}): ${error.message}`);
   }
 
+  const body = await res.text();
   let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // Пустой ответ — ошибку определяем по коду.
+  if (body) {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      // Ответ есть, но это не JSON. Так выглядит промах мимо API: страница
+      // приложения отдаётся со статусом 200 на неизвестный путь. Молчать нельзя —
+      // иначе инструмент вернёт null и упадёт где-то дальше без объяснения.
+      throw new Error(
+        `Ответ от ${BASE}${path} — не JSON (${res.status}). Похоже, эндпоинта там нет: ` +
+          "проверь, задеплоена ли текущая версия, или укажи VOCAB_API_URL."
+      );
+    }
   }
   if (!res.ok) {
     const error = new Error(data?.error ?? `Сервер ответил ${res.status}`);
@@ -37,6 +46,9 @@ export const listWords = () => request("/api/words");
 export const dueWords = (limit, lang) => request(`/api/words/due?limit=${limit}&lang=${lang}`);
 export const createWord = (word) => request("/api/words", json("POST", word));
 export const addExample = (id, text) => request(`/api/words/${id}/examples`, json("POST", { text }));
+export const checkSources = (term) => request(`/api/lookup/${encodeURIComponent(term)}`);
+export const setDefinition = (id, text) =>
+  request(`/api/words/${id}/definition`, json("POST", { text }));
 export const askAcademy = (id, href) =>
   request(`/api/words/${id}/academy`, json("POST", href ? { href } : {}));
 

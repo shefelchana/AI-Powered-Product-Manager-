@@ -13,6 +13,12 @@ const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(
 // Откуда объяснение — видно всегда. Академия даёт терминологическую справку,
 // не толкование, поэтому подпись с названием словаря и годом обязательна.
 function SourceNote({ word }) {
+  // Объяснение, написанное агентом, обязано быть отличимо от вписанного руками.
+  // Это единственная гарантия, ради которой запись агента вообще разрешена:
+  // такие карточки Анна потом проверяет, а непомеченные — нет.
+  if (word.definitionSource === "generated") {
+    return <p className="source generated">⚠️ сгенерировано, проверь</p>;
+  }
   if (!word.sourceLabel) return null;
   return (
     <p className="source" dir="rtl">

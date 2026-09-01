@@ -3,7 +3,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const client = new Client({ name: "smoke", version: "1.0.0" });
-await client.connect(new StdioClientTransport({ command: "node", args: ["server.js"] }));
+await client.connect(new StdioClientTransport({
+  command: "node",
+  args: ["server.js"],
+  // Переменные окружения дочернему процессу не наследуются автоматически:
+  // без этого проверка уходила в прод вместо локального сервера.
+  env: { ...process.env },
+}));
 
 const { tools } = await client.listTools();
 console.log("инструментов:", tools.length);
@@ -31,5 +37,14 @@ show("lookup_in_academy", await client.callTool({
   name: "lookup_in_academy", arguments: { term: "תקציב" } }));
 show("add_example к несуществующему", await client.callTool({
   name: "add_example", arguments: { term: "ווווו", text: "משהו" } }));
+
+show("check_sources существительное", await client.callTool({
+  name: "check_sources", arguments: { term: "תקציב" } }));
+show("check_sources глагол", await client.callTool({
+  name: "check_sources", arguments: { term: "להזדרז" } }));
+show("check_sources бессмыслица", await client.callTool({
+  name: "check_sources", arguments: { term: "קשקוש123" } }));
+show("set_definition поверх существующего", await client.callTool({
+  name: "set_definition", arguments: { term: "מיזוג", definition: "не должно записаться" } }));
 
 await client.close();

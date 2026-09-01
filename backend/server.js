@@ -5,6 +5,9 @@ import { Op } from "sequelize";
 import { sequelize, dbKind } from "./db.js";
 import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
+import { lookupWiktionary } from "./wiktionary.js";
+import { lookupPealim } from "./pealim.js";
+import { significantWords, sourcesDisagree } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -187,6 +190,12 @@ app.post("/api/words/:id/academy", async (req, res) => {
     return res.status(400).json({ error: "Неизвестный адрес записи" });
   }
 
+  // Тот же запрет, что и у POST /definition: заполнять пустое можно,
+  // переписывать чужую работу нельзя. Агенту разрешено вызывать оба пути.
+  if (word.definition && !req.body?.overwrite) {
+    return res.status(409).json({ error: "У слова уже есть объяснение, перезаписывать нельзя", word });
+  }
+
   let found;
   try {
     found = href ? await fetchRecord(href) : await lookup(word.term);
@@ -205,6 +214,130 @@ app.post("/api/words/:id/academy", async (req, res) => {
   word.definitionSource = "academy";
   word.sourceLabel = found.sourceLabel;
   word.sourceUrl = found.sourceUrl;
+  await word.save();
+  res.json(word);
+});
+
+// Сверка слова по трём источникам без записи. Решение принимается ДО того,
+// как что-то сохранено: правило расхождения иначе не имеет смысла.
+//
+// Источники дополняют друг друга по покрытию: Академия — термины,
+// Викисловарь — существительные, Pealim — глаголы. Поэтому молчание одного
+// из них это норма, а не сбой.
+app.get("/api/lookup/:term", async (req, res) => {
+  const term = clean(req.params.term, MAX_TERM);
+  if (!term) return res.status(400).json({ error: "Слово не может быть пустым" });
+
+  // Недоступность одного источника не должна ронять сверку целиком.
+  const [academyResult, wiktionaryResult, pealimResult] = await Promise.allSettled([
+    lookup(term),
+    lookupWiktionary(term),
+    lookupPealim(term),
+  ]);
+  const value = (result) => (result.status === "fulfilled" ? result.value : null);
+  const failure = (result) => (result.status === "rejected" ? result.reason.message : null);
+
+  const academy = value(academyResult);
+  const wiktionary = value(wiktionaryResult);
+  const pealim = value(pealimResult);
+
+  // Варианты Академии — это не ответ, а вопрос к человеку: сравнивать нечего.
+  const answers = [
+    { name: "Академия", text: academy && !academy.candidates ? academy.definition : "" },
+    { name: "Викисловарь", text: wiktionary?.gloss ?? "" },
+    { name: "Pealim", text: pealim?.meaning ?? "" },
+  ].filter((answer) => answer.text);
+
+  // Спорным слово становится, если хотя бы одна пара ответивших источников
+  // не имеет общих значимых слов.
+  // Значения из слишком коротких слов сравнению не поддаются.
+  const comparable = answers.filter((answer) => significantWords(answer.text).size > 0);
+
+  const conflicts = [];
+  for (let i = 0; i < answers.length; i += 1) {
+    for (let j = i + 1; j < answers.length; j += 1) {
+      if (sourcesDisagree(answers[i].text, answers[j].text)) {
+        conflicts.push(`${answers[i].name} против ${answers[j].name}`);
+      }
+    }
+  }
+
+  // Порядок важен. Неоднозначность Академии сама по себе не блокирует: у глаголов
+  // почти всегда несколько терминологических записей, и если бы она перебивала
+  // ответ Pealim, третий источник не пригодился бы никогда. Блокирует только
+  // настоящее противоречие между ответившими.
+  const ambiguous = Boolean(academy?.candidates);
+  const down = Object.entries({
+    Академия: failure(academyResult),
+    Викисловарь: failure(wiktionaryResult),
+    Pealim: failure(pealimResult),
+  })
+    .filter(([, message]) => message)
+    .map(([name]) => name);
+
+  let verdict;
+  // Недоступность источника — это отсутствие проверки, а не отсутствие данных.
+  // Без этой ветки сбой сети превращался бы в утверждение «нигде нет» и давал
+  // агенту право писать своё объяснение.
+  if (down.length === 3) {
+    verdict = `ни один источник не ответил (${down.join(", ")}) — сверки не было, записывать нельзя`;
+  } else if (conflicts.length > 0) {
+    verdict = `источники расходятся (${conflicts.join(", ")}) — записывать нельзя`;
+  } else if (comparable.length < 2 && answers.length > 0) {
+    // Ответ вроде «to add» состоит из слишком коротких слов: сравнивать нечего.
+    // Выдавать это за «источники сходятся» нельзя — «sell» и «buy» так прошли бы
+    // как согласие.
+    verdict =
+      answers.length === 1
+        ? `ответил только один источник (${answers[0].name}) — сравнить не с чем`
+        : "сравнить нечем: значения слишком короткие для сверки";
+  } else if (answers.length > 0) {
+    verdict = ambiguous
+      ? "источники не противоречат, но у Академии есть похожие слова — учесть при записи"
+      : "источники не противоречат друг другу";
+  } else if (ambiguous) {
+    verdict = "ответила только Академия и предлагает несколько вариантов — выбирает человек";
+  } else {
+    verdict = "нет данных ни в одном источнике";
+  }
+  if (down.length > 0 && down.length < 3) {
+    verdict += ` (недоступны: ${down.join(", ")}, проверено не полностью)`;
+  }
+
+  res.json({
+    term,
+    academy: academy?.candidates ? { candidates: academy.candidates } : academy,
+    wiktionary,
+    pealim,
+    disagree: conflicts.length > 0,
+    conflicts,
+    verdict,
+    errors: {
+      academy: failure(academyResult),
+      wiktionary: failure(wiktionaryResult),
+      pealim: failure(pealimResult),
+    },
+  });
+});
+
+// Отдельный маршрут, а не PATCH: метку источника ставит сервер, и через него
+// можно записать только «сгенерировано». Так агент не выдаст своё объяснение
+// за справку Академии или за проверенное Анной.
+app.post("/api/words/:id/definition", async (req, res) => {
+  const definition = clean(req.body?.text, MAX_DEFINITION);
+  if (!definition) return res.status(400).json({ error: "Объяснение не может быть пустым" });
+
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  // Заполнять пустое можно, переписывать чужую работу нельзя.
+  if (word.definition) {
+    return res.status(409).json({ error: "У слова уже есть объяснение, перезаписывать нельзя", word });
+  }
+
+  word.definition = definition;
+  word.definitionSource = "generated";
+  word.sourceLabel = "";
+  word.sourceUrl = "";
   await word.save();
   res.json(word);
 });
