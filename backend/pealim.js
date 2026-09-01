@@ -48,6 +48,31 @@ export function parseTitle(title) {
   return { term, meaning };
 }
 
+// Биньян размечен строкой «Verb – HITPA'EL» перед корнем. Привязка к ней
+// обязательна: при поиске по всей странице существительное מיזוג получало
+// PA'AL из постороннего места — правдоподобная выдумка вместо пустого поля.
+export function parseBinyan(page) {
+  // Апостроф в разметке экранирован (&apos;), поэтому в шаблоне он произвольный.
+  const match = String(page ?? "").match(
+    /Verb\s*[–-]\s*(PA|PI|HIF|HITPA|NIF|HUF|PU)(?:&apos;|&#39;|')(EL|AL|IL)/i
+  );
+  return match ? `${match[1]}'${match[2]}`.toUpperCase() : "";
+}
+
+// Корень напечатан как «Root: ז - ר - ז». Приводим к общепринятой записи
+// через маленькое тире: ז־ר־ז.
+export function parseRoot(page) {
+  // Корень напечатан как «Root: ז - ר - ז», а сразу за ним без разделителя идёт
+  // английский текст. Поэтому берём именно последовательность букв через дефис
+  // и на ней останавливаемся — иначе в корень затекают соседние слова.
+  const raw = String(page ?? "").match(
+    /Root:\s*((?:[\u05D0-\u05EA]\s*-\s*)+[\u05D0-\u05EA])/
+  )?.[1];
+  if (!raw) return "";
+  const letters = raw.match(/[\u05D0-\u05EA]/g) ?? [];
+  return letters.length >= 2 ? letters.join("־") : "";
+}
+
 export async function lookupPealim(term) {
   const clean = String(term ?? "").trim();
   if (!clean) return null;
@@ -66,6 +91,8 @@ export async function lookupPealim(term) {
 
   return {
     ...entry,
+    root: parseRoot(page),
+    binyan: parseBinyan(page),
     // Транслитерация лежит в слаге ссылки: /dict/532-lehizdarez/
     translit: href.match(/\/dict\/\d+-([^/]+)/)?.[1] ?? "",
     sourceUrl: BASE + href,

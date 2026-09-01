@@ -342,6 +342,45 @@ app.post("/api/words/:id/definition", async (req, res) => {
   res.json(word);
 });
 
+// Запись справки Pealim. Отдельный путь от «сгенерировано»: у глагола есть
+// настоящий источник, и подписывать его как выдумку агента было бы неправдой.
+// Заодно сохраняются корень и биньян — они факт о слове, а не о значении.
+app.post("/api/words/:id/pealim", async (req, res) => {
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  if (word.definition && !req.body?.overwrite) {
+    return res.status(409).json({ error: "У слова уже есть объяснение, перезаписывать нельзя", word });
+  }
+
+  let found;
+  try {
+    found = await lookupPealim(word.term);
+  } catch (error) {
+    return res.status(502).json({ error: `Pealim недоступен: ${error.message}` });
+  }
+  if (!found) return res.status(404).json({ error: "В Pealim такого слова нет" });
+
+  word.definition = found.meaning;
+  word.definitionSource = "pealim";
+  word.sourceLabel = ["Pealim", found.binyan, found.translit].filter(Boolean).join(" · ");
+  word.sourceUrl = found.sourceUrl;
+  word.root = found.root;
+  word.binyan = found.binyan;
+  await word.save();
+  res.json(word);
+});
+
+// Слова того же корня. Корень — самая сильная связь между словами в иврите:
+// увидев, что слово из уже знакомой семьи, его запоминают заметно легче.
+app.get("/api/words/:id/family", async (req, res) => {
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  if (!word.root) return res.json([]);
+
+  const family = await Word.findAll({ where: { root: word.root } });
+  res.json(family.filter((relative) => relative.id !== word.id));
+});
+
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "public")));
   app.get("*", (req, res) => {

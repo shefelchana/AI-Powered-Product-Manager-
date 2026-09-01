@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTitle } from "./pealim.js";
+import { parseBinyan, parseRoot, parseTitle } from "./pealim.js";
 
 test("из заголовка берутся слово и значение", () => {
   const entry = parseTitle("להזדרז – to hurry up, to hustle – Hebrew conjugation tables");
@@ -41,3 +41,29 @@ test("пустой и отсутствующий ввод не ломают ра
 // Сверку найденного слова с запрошенным тестируем через экспортируемую bare-логику
 // косвенно: сам lookupPealim ходит в сеть, поэтому здесь проверяем только разбор.
 // Живая проверка на бессмыслице «קשקוש123» зафиксирована в отчёте задачи.
+
+// --- корень и биньян ---
+// Разметка живёт в мета-теге: «Verb – HITPA&apos;EL | Root: ז - ר - ז» и сразу
+// за корнем, без разделителя, идёт английский текст.
+
+const VERB_META = `<meta content="Verb – HITPA&apos;EL | Root: ז - ר - זThe middle radical of this word is guttural. | Infinitive: לְהִזְדָּרֵז lehizdarez">`;
+const NOUN_META = `<meta content="Noun – no binyan | Root: מ - ז - גMerging of companies. | Singular: מִזּוּג mizug">`;
+
+test("биньян читается несмотря на экранированный апостроф", () => {
+  assert.equal(parseBinyan(VERB_META), "HITPA'EL");
+});
+
+test("у существительного биньян не выдумывается", () => {
+  assert.equal(parseBinyan(NOUN_META), "");
+});
+
+test("корень берётся до конца последовательности, а не по длине окна", () => {
+  assert.equal(parseRoot(VERB_META), "ז־ר־ז");
+  assert.equal(parseRoot(NOUN_META), "מ־ז־ג");
+});
+
+test("без корня и на мусоре возвращается пустая строка", () => {
+  assert.equal(parseRoot("<meta content='ничего'>"), "");
+  assert.equal(parseRoot(""), "");
+  assert.equal(parseBinyan(null), "");
+});

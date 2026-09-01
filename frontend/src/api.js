@@ -36,6 +36,9 @@ export const addWord = (word) => request("/api/words", json("POST", word));
 export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH", patch));
 export const reviewWord = (id, known) =>
   request(`/api/words/${id}/review`, json("PATCH", { known }));
+export const wordFamily = (id) => request(`/api/words/${id}/family`);
+export const fromPealim = (id) =>
+  request(`/api/words/${id}/pealim`, json("POST", { overwrite: true }));
 export const wordOfDay = (lang) => request(`/api/word-of-day?lang=${lang}`);
 export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE" });
 // overwrite: это нажимает человек в приложении и видит, что заменяет.

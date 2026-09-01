@@ -38,6 +38,14 @@ export const Word = sequelize.define("Word", {
   sourceLabel: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   sourceUrl: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   translation: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
+  // Корень — самая сильная связь между словами в иврите: от одного корня растёт
+  // целое семейство, и выучив узор, слово из семьи узнаёшь без словаря.
+  // Берётся ТОЛЬКО из словаря, никогда не вычисляется: слабые буквы и удвоения
+  // делают выделение корня нетривиальным, а выдуманный корень — та же тихая
+  // подмена, что и выдуманное значение.
+  root: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "" },
+  // Биньян есть только у глаголов и только когда словарь его назвал.
+  binyan: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
   // Свой яркий образ к слову: звук и опыт уже есть, картинка — третья часть.
   // Адрес внешний, значит может протухнуть — показ переживает битую ссылку.
   imageUrl: { type: DataTypes.STRING(600), allowNull: false, defaultValue: "" },
