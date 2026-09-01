@@ -479,3 +479,27 @@ button {
 .source.generated {
   color: #ffd479;
 }
+
+/* ---------- корень и семья ---------- */
+
+.root-line {
+  margin: 0.4rem 0 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  color: #9aa3b2;
+}
+
+.family {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #2b2f37;
+}
+
+.family ul {
+  margin: 0.4rem 0 0;
+  padding-inline-start: 1.1rem;
+}
+
+.family li {
+  margin-bottom: 0.4rem;
+}

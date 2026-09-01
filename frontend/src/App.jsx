@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, dueWords, fromAcademy, listWords, reviewWord, updateWord, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, dueWords, fromAcademy, fromPealim, listWords, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { clozeFor, matches } from "./recall.js";
 
@@ -39,6 +39,51 @@ function WordImage({ word }) {
   if (!word.imageUrl || broken) return null;
   return (
     <img className="word-image" src={word.imageUrl} alt={word.term} onError={() => setBroken(true)} />
+  );
+}
+
+// Корень и биньян — одной строкой, без грамматического разбора. Задача строки
+// не научить узору, а дать зацепку: слово из знакомой семьи запоминается легче.
+function RootLine({ word }) {
+  if (!word.root) return null;
+  // Строка идёт по направлению языка слова, иначе корень оказывается прижат
+  // к другому краю, чем весь остальной ивритский текст карточки.
+  return (
+    <p className="root-line" dir={dirOf(word.lang)}>
+      {word.root}
+      {word.binyan ? ` · ${word.binyan}` : ""}
+    </p>
+  );
+}
+
+// Слова того же корня. Появляется само, когда их набирается хотя бы два —
+// отдельного действия не требует.
+function Family({ word }) {
+  const [family, setFamily] = useState([]);
+
+  useEffect(() => {
+    if (!word.root) return;
+    let active = true;
+    wordFamily(word.id)
+      .then((list) => active && setFamily(list))
+      .catch(() => active && setFamily([]));
+    return () => { active = false; };
+  }, [word.id, word.root]);
+
+  if (family.length === 0) return null;
+  return (
+    <div className="family">
+      <p className="muted">От этого корня у тебя уже есть:</p>
+      <ul>
+        {family.map((relative) => (
+          <li key={relative.id}>
+            <span dir={dirOf(relative.lang)}>{relative.term}</span>
+            {relative.binyan ? ` (${relative.binyan})` : ""}
+            {relative.definition ? ` — ${relative.definition}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -179,6 +224,8 @@ function DayScreen({ lang, onChanged }) {
 
       {word.definition && <p className="definition" dir="rtl">{word.definition}</p>}
       <SourceNote word={word} />
+      <RootLine word={word} />
+      <Family word={word} />
 
       <form onSubmit={submit}>
         <label className="field-label" htmlFor="example">Твоя фраза с этим словом</label>
@@ -405,6 +452,8 @@ function RevealCard({ word, onAnswer, listen }) {
             <p className="muted">Объяснения пока нет</p>
           )}
           <SourceNote word={word} />
+          <RootLine word={word} />
+          <Family word={word} />
           {exampleList(word).length > 0 && (
             <ul className="examples">
               {exampleList(word).map((line, i) => <li key={i} dir="rtl">{line}</li>)}
@@ -548,6 +597,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
         onChange={(e) => setDraft({ ...draft, definition: e.target.value })}
       />
       <SourceNote word={word} />
+      <RootLine word={word} />
 
       <label className="field-label">Перевод</label>
       <input
@@ -580,6 +630,13 @@ function WordRow({ word, open, onToggle, onChanged }) {
           onClick={() => run(() => fromAcademy(word.id))}
         >
           Из Академии
+        </button>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => run(() => fromPealim(word.id))}
+        >
+          Из Pealim
         </button>
         <button
           className="secondary"
