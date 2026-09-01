@@ -7,6 +7,7 @@ import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./model
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
+import { drawImage } from "./draw.js";
 import { significantWords, sourcesDisagree } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -450,6 +451,31 @@ app.get("/api/words/:id/image", async (req, res) => {
   // Картинка неизменна, пока её не заменили: пусть браузер её не перекачивает.
   res.set("Cache-Control", "public, max-age=86400");
   res.send(word.imageData);
+});
+
+// Нарисовать образ к слову. По кнопке, не автоматически: метод требует своего
+// образа, и решение «этот подходит» остаётся за человеком. Генерация тут
+// уместна прежде всего для абстрактных глаголов, которым поиск картинок
+// не даёт ничего пригодного.
+app.post("/api/words/:id/image/generate", async (req, res) => {
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+
+  let drawn;
+  try {
+    drawn = await drawImage(word);
+  } catch (error) {
+    // Отказ модели — это отсутствие картинки, а не повод оставить старую
+    // в неопределённом состоянии: ничего не трогаем и говорим причину.
+    const status = error.code === "quota" ? 429 : error.code === "no_key" ? 501 : 502;
+    return res.status(status).json({ error: error.message });
+  }
+
+  word.imageData = drawn.bytes;
+  word.imageMime = drawn.mime;
+  word.imageUrl = "";
+  await word.save();
+  res.json({ ok: true, bytes: drawn.bytes.length, mime: drawn.mime });
 });
 
 if (process.env.NODE_ENV === "production") {
