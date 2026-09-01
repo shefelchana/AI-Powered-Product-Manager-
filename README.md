@@ -56,6 +56,13 @@ npm run dev
 
 Open <http://localhost:5173>. The Vite dev server proxies `/api` to the backend on port 3001.
 
+## Drawing an image for a word
+
+Set `GEMINI_API_KEY` in the environment (locally in `.env`, on Render under
+Environment) and the word card gets a "draw" button. Image models are not on the
+free tier - without billing the request comes back as an exhausted quota, and the
+card says so. `IMAGE_MODEL` overrides the model, default `gemini-2.5-flash-image`.
+
 ## Tests
 
 Pure functions only, on Node's built-in runner — no dependencies to install:

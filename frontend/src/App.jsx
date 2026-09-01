@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, dueWords, fromAcademy, fromPealim, listWords, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, drawImage, dueWords, fromAcademy, fromPealim, listWords, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { clozeFor, matches } from "./recall.js";
 
@@ -628,8 +628,17 @@ function WordRow({ word, open, onToggle, onChanged }) {
       >
         Сохранить картинку
       </button>
+      <button
+        className="secondary"
+        disabled={busy}
+        onClick={() => run(() => drawImage(word.id))}
+      >
+        Нарисовать образ
+      </button>
       <p className="muted">
         Картинка скачивается и остаётся в приложении: ссылки генераторов живут часы.
+        Рисование уместнее для абстрактных слов — конкретные лучше искать глазами
+        и выбирать тот образ, что запал.
       </p>
       <a
         className="quiet"
