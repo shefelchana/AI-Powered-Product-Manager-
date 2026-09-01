@@ -36,6 +36,8 @@ export const addWord = (word) => request("/api/words", json("POST", word));
 export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH", patch));
 export const reviewWord = (id, known) =>
   request(`/api/words/${id}/review`, json("PATCH", { known }));
+export const saveImage = (id, url) =>
+  request(`/api/words/${id}/image`, json("POST", { url }));
 export const wordFamily = (id) => request(`/api/words/${id}/family`);
 export const fromPealim = (id) =>
   request(`/api/words/${id}/pealim`, json("POST", { overwrite: true }));

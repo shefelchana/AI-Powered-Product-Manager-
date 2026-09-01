@@ -1,0 +1,3 @@
+[mcp_servers.vocab]
+command = "node"
+args = ["mcp/server.js"]

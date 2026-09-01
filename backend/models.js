@@ -48,7 +48,15 @@ export const Word = sequelize.define("Word", {
   binyan: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
   // Свой яркий образ к слову: звук и опыт уже есть, картинка — третья часть.
   // Адрес внешний, значит может протухнуть — показ переживает битую ссылку.
-  imageUrl: { type: DataTypes.STRING(600), allowNull: false, defaultValue: "" },
+  // Откуда картинка взята — для памяти и для повторного скачивания.
+  // Ссылки генераторов бывают длиной в полторы тысячи символов: короткое поле
+  // молча резало их и превращало в мусор.
+  imageUrl: { type: DataTypes.STRING(2048), allowNull: false, defaultValue: "" },
+  // Сама картинка. Ссылки на сгенерированные изображения живут часы: в них
+  // зашиты срок и подпись. Храним байты у себя, иначе карточка назавтра пустеет,
+  // и понять почему нельзя.
+  imageData: { type: DataTypes.BLOB, allowNull: true },
+  imageMime: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "" },
   // Your own phrases with this word, one per line. A word learned inside a
   // sentence you lived through sticks; a word learned in a column does not.
   examples: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
