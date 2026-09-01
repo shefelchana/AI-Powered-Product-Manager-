@@ -7,7 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { addExample, askAcademy, createWord, dueWords, findByTerm, listWords, BASE } from "./api.js";
+import { addExample, askAcademy, checkSources, createWord, dueWords, findByTerm, listWords, setDefinition, BASE } from "./api.js";
 
 const server = new McpServer({ name: "vocab", version: "1.0.0" });
 
@@ -175,6 +175,81 @@ server.registerTool(
       return text(`Справка получена: ${describe(result)}`);
     } catch (error) {
       if (error.status === 404) return text(`В базе Академии слова «${term}» нет.`);
+      return failure(error.message);
+    }
+  }
+);
+
+server.registerTool(
+  "check_sources",
+  {
+    title: "Сверить слово по трём источникам",
+    description:
+      "Спросить про слово Академию языка иврит, английский Викисловарь и Pealim сразу " +
+      "и сравнить их ответы, ничего не записывая. Вызывай ПЕРЕД тем, как записывать " +
+      "объяснение. Источники покрывают разное: Академия — термины, Викисловарь — " +
+      "существительные, Pealim — глаголы, поэтому молчание одного из них это норма. " +
+      "Если вердикт говорит, что источники расходятся — не выбирай сам: слово спорное, " +
+      "сообщи о нём и оставь как есть. Викисловарь и Pealim дополнительно дают " +
+      "транслитерацию латиницей, показывающую звучание.",
+    inputSchema: { term: z.string().min(1).describe("Слово, которое надо сверить") },
+  },
+  async ({ term }) => {
+    try {
+      const result = await checkSources(term);
+      const lines = [`Вердикт: ${result.verdict}`];
+      if (result.academy?.candidates) {
+        lines.push(`Академия, варианты: ${result.academy.candidates.map((c) => c.display).join(" · ")}`);
+      } else if (result.academy) {
+        lines.push(`Академия: ${result.academy.definition} (${result.academy.sourceLabel})`);
+      } else {
+        lines.push("Академия: нет данных");
+      }
+      lines.push(
+        result.wiktionary
+          ? `Викисловарь: ${result.wiktionary.vocalized} (${result.wiktionary.translit}) — ${result.wiktionary.gloss}`
+          : "Викисловарь: нет данных"
+      );
+      lines.push(
+        result.pealim
+          ? `Pealim: ${result.pealim.meaning} (${result.pealim.translit}, ${result.pealim.binyan})`
+          : "Pealim: нет данных"
+      );
+      for (const [name, message] of Object.entries(result.errors)) {
+        if (message) lines.push(`⚠️ ${name} недоступен: ${message}`);
+      }
+      return text(lines.join("\n"));
+    } catch (error) {
+      return failure(error.message);
+    }
+  }
+);
+
+server.registerTool(
+  "set_definition",
+  {
+    title: "Записать своё объяснение",
+    description:
+      "Записать объяснение слова, которого нет ни в одном источнике. Объяснение " +
+      "сохраняется с пометкой «сгенерировано, проверь», и эта пометка видна на карточке. " +
+      "Записывать можно только слову БЕЗ объяснения: существующее не перезаписывается. " +
+      "Не вызывай, пока не сверил слово через check_sources.",
+    inputSchema: {
+      term: z.string().min(1).describe("Слово из колоды"),
+      definition: z
+        .string()
+        .min(1)
+        .describe("Объяснение на языке слова: одна строка простыми словами плюс пример употребления"),
+    },
+  },
+  async ({ term, definition }) => {
+    try {
+      const word = await findByTerm(term);
+      if (!word) return failure(`Слова «${term}» нет в колоде.`);
+      const updated = await setDefinition(word.id, definition);
+      return text(`Записано с пометкой «сгенерировано, проверь»: ${describe(updated)}`);
+    } catch (error) {
+      if (error.status === 409) return failure(`У слова «${term}» уже есть объяснение, не трогаю.`);
       return failure(error.message);
     }
   }
