@@ -49,3 +49,19 @@ test("многострочное определение Академии чит�
 test("реальные строки, которые сходятся, расхождением не считаются", () => {
   assert.ok(!sourcesDisagree("מִזּוּג — merger, amalgamation", "A merger of two companies"));
 });
+
+// --- сравнение по началу слова (находка финального ревью) ---
+// Точное совпадение разводило источники на орфографии: метка «спорное»,
+// срабатывающая на merger/merging, перестаёт что-либо значить.
+
+test("merger и merging расхождением не считаются", () => {
+  assert.ok(!sourcesDisagree("מִזּוּג — merger, amalgamation", "merging"));
+});
+
+test("британское и американское написание — не расхождение", () => {
+  assert.ok(!sourcesDisagree("to emphasise, to stress", "emphasize"));
+});
+
+test("сравнение по началу слова не склеивает разные слова", () => {
+  assert.ok(sourcesDisagree("budget, allocation", "hurry, hasten"));
+});

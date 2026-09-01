@@ -72,3 +72,35 @@ test("несколько частей речи в ивритском разде�
 consecration, dedication, inauguration`;
   assert.equal(parseEntry(two), null);
 });
+
+// --- реальный формат статьи (находка финального ревью) ---
+// В живых статьях заголовочная строка часто несёт два написания через слэш:
+// «ריבית / רִבִּית • (ribít) f». Прежние фикстуры этого не знали.
+
+test("два написания через слэш в заголовочной строке", () => {
+  const entry = parseEntry(`== Hebrew ==
+
+=== Noun ===
+
+ריבית / רִבִּית • (ribít) f
+
+interest (price of credit)`);
+  assert.equal(entry.vocalized, "ריבית / רִבִּית");
+  assert.equal(entry.translit, "ribít");
+});
+
+test("несколько значений одной части речи не теряются", () => {
+  const entry = parseEntry(`== Hebrew ==
+
+=== Noun ===
+
+מיזוג / מִזּוּג • (mizúg) m
+
+merging
+
+air conditioning
+
+==== Derived terms ====`);
+  assert.ok(entry.gloss.includes("merging"));
+  assert.ok(entry.gloss.includes("air conditioning"));
+});

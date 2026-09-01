@@ -6,11 +6,9 @@
 // в «оба молчат».
 const BASE = "https://www.pealim.com";
 // Сайт чужой и небольшой: ходим редко и представляемся честно.
-const UA = "vocab-cards/1.0 (personal Hebrew study tool; contact: shefelchana@gmail.com)";
+const UA = "vocab-cards/1.0 (personal Hebrew study tool; https://github.com/shefelchana/AI-Powered-Product-Manager-)";
 const GAP_MS = 1100;
 const TIMEOUT_MS = 20000;
-const BINYANIM = /(PA'AL|PI'EL|HIF'IL|HITPA'EL|NIF'AL|HUF'AL|PU'AL)/i;
-
 // Поиск всегда что-то возвращает: на бессмыслицу «קשקוש123» он отдал статью
 // про агору. Поэтому найденное слово сверяется с запрошенным, иначе клиент
 // принимал бы первую попавшуюся ссылку за ответ.
@@ -70,7 +68,6 @@ export async function lookupPealim(term) {
     ...entry,
     // Транслитерация лежит в слаге ссылки: /dict/532-lehizdarez/
     translit: href.match(/\/dict\/\d+-([^/]+)/)?.[1] ?? "",
-    binyan: page.match(BINYANIM)?.[1]?.toUpperCase() ?? "",
     sourceUrl: BASE + href,
   };
 }

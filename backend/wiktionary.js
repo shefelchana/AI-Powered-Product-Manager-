@@ -30,11 +30,18 @@ export function parseEntry(extract) {
   const translit = head.match(/•\s*\(([^)]+)\)/)?.[1]?.trim() ?? "";
   const gender = head.match(/\)\s+(m|f)\b/)?.[1] ?? "";
 
-  // Значение — первая непустая строка после заголовочной, которая сама не заголовок.
-  const gloss = section
-    .slice(headIndex + 1)
-    .map((line) => line.trim())
-    .find((line) => line && !HEADING.test(line));
+  // Значения — все строки после заголовочной до следующего заголовка. Раньше
+  // бралась только первая, и у מיזוג «air conditioning» пропадало без следа.
+  // Несколько значений одной части речи — это не противоречие, а полнота:
+  // в отличие от разных частей речи, отбрасывать здесь нечего.
+  const glosses = [];
+  for (const raw of section.slice(headIndex + 1)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (HEADING.test(line)) break;
+    glosses.push(line);
+  }
+  const gloss = glosses.join("; ");
 
   if (!vocalized || !gloss) return null;
   return { vocalized, translit, gender, gloss };
@@ -45,7 +52,7 @@ export function parseEntry(extract) {
 const API = "https://en.wiktionary.org/w/api.php";
 // Викимедиа режет запросы без содержательного User-Agent — это их требование,
 // а не перестраховка: без него приходит 429.
-const UA = "vocab-cards/1.0 (personal Hebrew study tool; contact: shefelchana@gmail.com)";
+const UA = "vocab-cards/1.0 (personal Hebrew study tool; https://github.com/shefelchana/AI-Powered-Product-Manager-)";
 // Пауза между запросами — вежливость к чужому бесплатному API: одиночные
 // обращения оно терпит, очередь без пауз — уже нет.
 const GAP_MS = 1100;
@@ -78,7 +85,17 @@ export async function lookupWiktionary(term) {
   }
   if (!res.ok) throw new Error(`Викисловарь ответил ${res.status}`);
 
-  const data = await res.json();
+  // При троттлинге Викимедиа отвечает простым текстом («You are making too many
+  // requests…»), иногда даже со статусом 200. res.json() на этом бросает
+  // SyntaxError, который уходит наверх как «Unexpected token 'Y'» — сообщение,
+  // по которому причину не найти.
+  const body = await res.text();
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(`Викисловарь ответил не JSON: ${body.slice(0, 120)}`);
+  }
   const page = Object.values(data?.query?.pages ?? {})[0];
   if (!page || page.missing !== undefined) return null;
 

@@ -7,7 +7,7 @@ import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./model
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
-import { sourcesDisagree } from "./compare.js";
+import { significantWords, sourcesDisagree } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -190,6 +190,12 @@ app.post("/api/words/:id/academy", async (req, res) => {
     return res.status(400).json({ error: "Неизвестный адрес записи" });
   }
 
+  // Тот же запрет, что и у POST /definition: заполнять пустое можно,
+  // переписывать чужую работу нельзя. Агенту разрешено вызывать оба пути.
+  if (word.definition && !req.body?.overwrite) {
+    return res.status(409).json({ error: "У слова уже есть объяснение, перезаписывать нельзя", word });
+  }
+
   let found;
   try {
     found = href ? await fetchRecord(href) : await lookup(word.term);
@@ -244,6 +250,9 @@ app.get("/api/lookup/:term", async (req, res) => {
 
   // Спорным слово становится, если хотя бы одна пара ответивших источников
   // не имеет общих значимых слов.
+  // Значения из слишком коротких слов сравнению не поддаются.
+  const comparable = answers.filter((answer) => significantWords(answer.text).size > 0);
+
   const conflicts = [];
   for (let i = 0; i < answers.length; i += 1) {
     for (let j = i + 1; j < answers.length; j += 1) {
@@ -258,17 +267,41 @@ app.get("/api/lookup/:term", async (req, res) => {
   // ответ Pealim, третий источник не пригодился бы никогда. Блокирует только
   // настоящее противоречие между ответившими.
   const ambiguous = Boolean(academy?.candidates);
+  const down = Object.entries({
+    Академия: failure(academyResult),
+    Викисловарь: failure(wiktionaryResult),
+    Pealim: failure(pealimResult),
+  })
+    .filter(([, message]) => message)
+    .map(([name]) => name);
+
   let verdict;
-  if (conflicts.length > 0) {
+  // Недоступность источника — это отсутствие проверки, а не отсутствие данных.
+  // Без этой ветки сбой сети превращался бы в утверждение «нигде нет» и давал
+  // агенту право писать своё объяснение.
+  if (down.length === 3) {
+    verdict = `ни один источник не ответил (${down.join(", ")}) — сверки не было, записывать нельзя`;
+  } else if (conflicts.length > 0) {
     verdict = `источники расходятся (${conflicts.join(", ")}) — записывать нельзя`;
+  } else if (comparable.length < 2 && answers.length > 0) {
+    // Ответ вроде «to add» состоит из слишком коротких слов: сравнивать нечего.
+    // Выдавать это за «источники сходятся» нельзя — «sell» и «buy» так прошли бы
+    // как согласие.
+    verdict =
+      answers.length === 1
+        ? `ответил только один источник (${answers[0].name}) — сравнить не с чем`
+        : "сравнить нечем: значения слишком короткие для сверки";
   } else if (answers.length > 0) {
     verdict = ambiguous
-      ? "источники не противоречат, но у Академии несколько вариантов — учесть при записи"
+      ? "источники не противоречат, но у Академии есть похожие слова — учесть при записи"
       : "источники не противоречат друг другу";
   } else if (ambiguous) {
     verdict = "ответила только Академия и предлагает несколько вариантов — выбирает человек";
   } else {
     verdict = "нет данных ни в одном источнике";
+  }
+  if (down.length > 0 && down.length < 3) {
+    verdict += ` (недоступны: ${down.join(", ")}, проверено не полностью)`;
   }
 
   res.json({
