@@ -287,6 +287,28 @@ app.get("/api/lookup/:term", async (req, res) => {
   });
 });
 
+// Отдельный маршрут, а не PATCH: метку источника ставит сервер, и через него
+// можно записать только «сгенерировано». Так агент не выдаст своё объяснение
+// за справку Академии или за проверенное Анной.
+app.post("/api/words/:id/definition", async (req, res) => {
+  const definition = clean(req.body?.text, MAX_DEFINITION);
+  if (!definition) return res.status(400).json({ error: "Объяснение не может быть пустым" });
+
+  const word = await Word.findByPk(req.params.id);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  // Заполнять пустое можно, переписывать чужую работу нельзя.
+  if (word.definition) {
+    return res.status(409).json({ error: "У слова уже есть объяснение, перезаписывать нельзя", word });
+  }
+
+  word.definition = definition;
+  word.definitionSource = "generated";
+  word.sourceLabel = "";
+  word.sourceUrl = "";
+  await word.save();
+  res.json(word);
+});
+
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "public")));
   app.get("*", (req, res) => {
