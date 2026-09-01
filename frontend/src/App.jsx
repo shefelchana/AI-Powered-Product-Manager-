@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, dueWords, fromAcademy, fromPealim, listWords, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, dueWords, fromAcademy, fromPealim, listWords, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { clozeFor, matches } from "./recall.js";
 
@@ -35,10 +35,17 @@ function SourceNote({ word }) {
 // Адрес внешний и может протухнуть — тогда просто ничего не показываем.
 function WordImage({ word }) {
   const [broken, setBroken] = useState(false);
-  useEffect(() => { setBroken(false); }, [word.imageUrl]);
-  if (!word.imageUrl || broken) return null;
+  // Картинка лежит у приложения, поэтому адрес не протухает. updatedAt в ссылке —
+  // чтобы после замены картинки браузер показал новую, а не старую из кэша.
+  useEffect(() => { setBroken(false); }, [word.updatedAt]);
+  if (!word.hasImage || broken) return null;
   return (
-    <img className="word-image" src={word.imageUrl} alt={word.term} onError={() => setBroken(true)} />
+    <img
+      className="word-image"
+      src={`/api/words/${word.id}/image?v=${encodeURIComponent(word.updatedAt ?? "")}`}
+      alt={word.term}
+      onError={() => setBroken(true)}
+    />
   );
 }
 
@@ -610,10 +617,20 @@ function WordRow({ word, open, onToggle, onChanged }) {
       <WordImage word={word} />
       <input
         dir="ltr"
-        placeholder="адрес картинки"
+        placeholder="вставь адрес картинки и нажми «Сохранить картинку»"
         value={draft.imageUrl ?? ""}
         onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
       />
+      <button
+        className="secondary"
+        disabled={busy || !draft.imageUrl}
+        onClick={() => run(() => saveImage(word.id, draft.imageUrl))}
+      >
+        Сохранить картинку
+      </button>
+      <p className="muted">
+        Картинка скачивается и остаётся в приложении: ссылки генераторов живут часы.
+      </p>
       <a
         className="quiet"
         href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(word.term)}`}
