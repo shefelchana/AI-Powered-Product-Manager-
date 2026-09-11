@@ -8,7 +8,7 @@ import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
 import { drawImage } from "./draw.js";
-import { significantWords, sourcesDisagree } from "./compare.js";
+import { conflictReport, significantWords } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -259,9 +259,13 @@ app.get("/api/lookup/:term", async (req, res) => {
   const pealim = value(pealimResult);
 
   // Варианты Академии — это не ответ, а вопрос к человеку: сравнивать нечего.
+  // Академия помечена advisory: она даёт терминологический эквивалент, а не
+  // перевод, и её расхождение со словарями — совет посмотреть, а не запрет.
+  // Неразрешённая грамматическая стрелка Викисловаря (grammarOnly) — не значение:
+  // в сверку не идёт.
   const answers = [
-    { name: "Академия", text: academy && !academy.candidates ? academy.definition : "" },
-    { name: "Викисловарь", text: wiktionary?.gloss ?? "" },
+    { name: "Академия", text: academy && !academy.candidates ? academy.definition : "", advisory: true },
+    { name: "Викисловарь", text: wiktionary?.grammarOnly ? "" : wiktionary?.gloss ?? "" },
     { name: "Pealim", text: pealim?.meaning ?? "" },
   ].filter((answer) => answer.text);
 
@@ -270,14 +274,7 @@ app.get("/api/lookup/:term", async (req, res) => {
   // Значения из слишком коротких слов сравнению не поддаются.
   const comparable = answers.filter((answer) => significantWords(answer.text).size > 0);
 
-  const conflicts = [];
-  for (let i = 0; i < answers.length; i += 1) {
-    for (let j = i + 1; j < answers.length; j += 1) {
-      if (sourcesDisagree(answers[i].text, answers[j].text)) {
-        conflicts.push(`${answers[i].name} против ${answers[j].name}`);
-      }
-    }
-  }
+  const { blocking: conflicts, advisory } = conflictReport(answers);
 
   // Порядок важен. Неоднозначность Академии сама по себе не блокирует: у глаголов
   // почти всегда несколько терминологических записей, и если бы она перебивала
@@ -308,6 +305,8 @@ app.get("/api/lookup/:term", async (req, res) => {
       answers.length === 1
         ? `ответил только один источник (${answers[0].name}) — сравнить не с чем`
         : "сравнить нечем: значения слишком короткие для сверки";
+  } else if (advisory.length > 0) {
+    verdict = `Академия расходится с переводом (${advisory.join(", ")}) — её справка терминологическая, не перевод: взгляните сами; словари значений не противоречат`;
   } else if (answers.length > 0) {
     verdict = ambiguous
       ? "источники не противоречат, но у Академии есть похожие слова — учесть при записи"
@@ -327,6 +326,7 @@ app.get("/api/lookup/:term", async (req, res) => {
     wiktionary,
     pealim,
     disagree: conflicts.length > 0,
+    advisory,
     conflicts,
     verdict,
     errors: {

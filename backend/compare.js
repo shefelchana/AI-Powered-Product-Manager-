@@ -23,3 +23,21 @@ export function sourcesDisagree(first, second) {
   const stems = new Set([...b].map(stem));
   return ![...a].some((word) => stems.has(stem(word)));
 }
+
+// Не всякое расхождение — запрет. Источник, помеченный advisory, даёт справку,
+// а не толкование (Академия: терминологический эквивалент из отраслевого
+// словаря), и его расхождение с переводом законно — это повод посмотреть
+// глазами. Запись блокирует только конфликт между словарями значений.
+export function conflictReport(answers) {
+  const blocking = [];
+  const advisory = [];
+  for (let i = 0; i < answers.length; i += 1) {
+    for (let j = i + 1; j < answers.length; j += 1) {
+      if (sourcesDisagree(answers[i].text, answers[j].text)) {
+        const bucket = answers[i].advisory || answers[j].advisory ? advisory : blocking;
+        bucket.push(`${answers[i].name} против ${answers[j].name}`);
+      }
+    }
+  }
+  return { blocking, advisory };
+}

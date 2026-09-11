@@ -47,6 +47,18 @@ export function parseEntry(extract) {
   return { vocalized, translit, gender, gloss };
 }
 
+// Грамматические стрелки: «To-infinitive of דיבר», «feminine singular of גדול».
+// Такая строка — не значение, а указатель на лемму: сравнивать её со значениями
+// других источников бессмысленно, зато по лемме можно сходить за настоящим
+// значением. Лемма возвращается без огласовок — статьи лежат под голым написанием.
+const FORM_OF =
+  /^(?:[a-z-]+\s+){0,3}(?:[a-z]+-)?(?:infinitive|form|spelling|singular|plural|participle)\s+of\s+([א-ת][א-ת֑-ׇ]*)/i;
+
+export function formOfTarget(gloss) {
+  const match = String(gloss ?? "").trim().match(FORM_OF);
+  return match ? match[1].replace(/[֑-ׇ]/g, "") : null;
+}
+
 // Сетевая часть: тянем текстовую выжимку статьи из английского Викисловаря.
 // Второй источник справок — им сверяем данные Академии языка иврит.
 const API = "https://en.wiktionary.org/w/api.php";
@@ -69,7 +81,7 @@ async function paced(url) {
   return fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(TIMEOUT_MS) });
 }
 
-export async function lookupWiktionary(term) {
+export async function lookupWiktionary(term, { hop = false } = {}) {
   const clean = String(term ?? "").trim();
   if (!clean) return null;
 
@@ -103,5 +115,21 @@ export async function lookupWiktionary(term) {
   // а не сбой: наверх уходит null, исключение здесь неуместно.
   const entry = parseEntry(page.extract);
   if (!entry) return null;
-  return { ...entry, sourceUrl: `https://en.wiktionary.org/wiki/${encodeURIComponent(clean)}#Hebrew` };
+  const result = { ...entry, sourceUrl: `https://en.wiktionary.org/wiki/${encodeURIComponent(clean)}#Hebrew` };
+
+  // «To-infinitive of דיבר» — стрелка, а не значение: идём за значением к лемме.
+  // Ровно один прыжок: лемма, сама оказавшаяся стрелкой, — странность словаря,
+  // по цепочке не ходим. Не нашли лемму — оставляем стрелку, но помечаем её
+  // грамматической: сверка по ней невозможна, и молча выдавать её за значение
+  // нельзя — на этом ловились ложные «источники расходятся».
+  const lemma = formOfTarget(entry.gloss);
+  if (!lemma || hop) return result;
+  let target = null;
+  try {
+    target = await lookupWiktionary(lemma, { hop: true });
+  } catch {
+    // Лемма не долетела — не повод терять уже найденную форму.
+  }
+  if (!target || formOfTarget(target.gloss)) return { ...result, grammarOnly: true };
+  return { ...result, gloss: target.gloss, lemma, grammarOnly: false };
 }

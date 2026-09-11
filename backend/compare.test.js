@@ -65,3 +65,37 @@ test("британское и американское написание — н
 test("сравнение по началу слова не склеивает разные слова", () => {
   assert.ok(sourcesDisagree("budget, allocation", "hurry, hasten"));
 });
+
+// --- Классификация конфликтов ---
+// Академия — терминологическая база: её английский эквивалент («speech» из
+// словаря психологии 1953 года) законно расходится с переводом глагола
+// («to speak»). Такое расхождение — повод посмотреть глазами, а не запрет.
+// Блокирует запись только конфликт между словарями значений.
+import { conflictReport } from "./compare.js";
+
+test("конфликт со справочным источником — совет, а не запрет", () => {
+  const report = conflictReport([
+    { name: "Академия", text: "speech", advisory: true },
+    { name: "Викисловарь", text: "to speak (say words)" },
+    { name: "Pealim", text: "to speak, to talk" },
+  ]);
+  assert.deepEqual(report.blocking, []);
+  assert.deepEqual(report.advisory, ["Академия против Викисловарь", "Академия против Pealim"]);
+});
+
+test("конфликт словарей значений блокирует, как раньше", () => {
+  const report = conflictReport([
+    { name: "Викисловарь", text: "merger, amalgamation" },
+    { name: "Pealim", text: "divorce" },
+  ]);
+  assert.deepEqual(report.blocking, ["Викисловарь против Pealim"]);
+  assert.deepEqual(report.advisory, []);
+});
+
+test("согласные источники конфликтов не дают", () => {
+  const report = conflictReport([
+    { name: "Викисловарь", text: "family, kin", advisory: false },
+    { name: "Pealim", text: "family" },
+  ]);
+  assert.deepEqual(report, { blocking: [], advisory: [] });
+});
