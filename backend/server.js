@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { Op } from "sequelize";
-import { sequelize, dbKind } from "./db.js";
+import { backupDatabase, sequelize, dbKind } from "./db.js";
 import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
@@ -485,6 +485,21 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
+// Порт занимаем ДО работы с базой: он служит замком от вторых экземпляров.
+// Скопившиеся «node --watch» однажды перезапустились разом, наперегонки
+// выполнили sync({ alter: true }) — а это перестройка таблицы с перекладкой
+// строк — и стёрли данные друг у друга. Проигравший гонку за порт падает
+// здесь с EADDRINUSE, не успев открыть базу.
+const server = app.listen(PORT);
+await new Promise((resolve, reject) => {
+  server.once("listening", resolve);
+  server.once("error", reject);
+});
+
+// Копия — после замка (делает её только выживший экземпляр) и до sync
+// (пока базу никто не трогал).
+backupDatabase();
+
 await sequelize.sync({ alter: true });
 
 // Слова, заведённые до появления языков, метим по написанию.
@@ -496,6 +511,4 @@ for (const word of await Word.findAll()) {
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`Backend listening on http://localhost:${PORT} (db: ${dbKind})`);
-});
+console.log(`Backend listening on http://localhost:${PORT} (db: ${dbKind})`);
