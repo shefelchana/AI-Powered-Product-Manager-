@@ -38,6 +38,15 @@ export function searchVariants(term) {
 // этого же слова, и совпадение должно остаться единственным.
 const bare = (text) => stripNiqqud(text).replace(/[יו]/g, "");
 
+// Что из выдачи можно предложить человеку как варианты. Раньше при полном
+// промахе показывались первые пять ссылок как есть — и на «לכת» (от ללכת)
+// приходили «שיר לכת» (марш) и «לכת ניטרוצלולוזה» (лак): правдоподобный мусор
+// хуже честного «нет данных». Оставляем только совпадающих по голому написанию —
+// омографы, различимые лишь огласовкой, именно так и выглядят.
+export function offerCandidates(links, variant) {
+  return links.filter((link) => bare(link.label) === bare(variant)).slice(0, 5);
+}
+
 // Ссылки из выдачи принимаем только свои: адрес приходит с клиента.
 export const isTermPath = (href) => /^\/munnah\/[0-9]+_[0-9]+$/.test(String(href ?? ""));
 
@@ -110,7 +119,7 @@ export async function lookup(term) {
     const loose = exact.length > 0 ? exact : links.filter((link) => bare(link.label) === bare(variant));
     if (loose.length === 1) return fetchRecord(loose[0].href);
 
-    if (candidates.length === 0) candidates = (loose.length > 0 ? loose : links).slice(0, 5);
+    if (candidates.length === 0) candidates = offerCandidates(links, variant);
   }
 
   return candidates.length > 0 ? { candidates } : null;

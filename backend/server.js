@@ -2,13 +2,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { Op } from "sequelize";
-import { sequelize, dbKind } from "./db.js";
+import { backupDatabase, sequelize, dbKind } from "./db.js";
 import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
 import { drawImage } from "./draw.js";
-import { significantWords, sourcesDisagree } from "./compare.js";
+import { extractTerms } from "./importer.js";
+import { conflictReport, significantWords } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -94,6 +95,16 @@ app.post("/api/words", async (req, res) => {
     nextDue: today(),
   });
   res.status(201).json(withoutImageBytes(word));
+});
+
+// Предпросмотр импорта: из вставленного текста урока вылавливаются ивритские
+// слова, уже имеющиеся в колоде помечаются. Сервер ничего не создаёт —
+// какие кандидаты станут карточками, человек решает галочками на клиенте.
+app.post("/api/import/preview", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 20000);
+  const terms = extractTerms(text);
+  const existing = new Set((await Word.findAll({ attributes: ["term"] })).map((w) => w.term));
+  res.json({ candidates: terms.map((term) => ({ term, exists: existing.has(term) })) });
 });
 
 // Filling in a definition later, at home, when there is attention for it.
@@ -259,9 +270,13 @@ app.get("/api/lookup/:term", async (req, res) => {
   const pealim = value(pealimResult);
 
   // Варианты Академии — это не ответ, а вопрос к человеку: сравнивать нечего.
+  // Академия помечена advisory: она даёт терминологический эквивалент, а не
+  // перевод, и её расхождение со словарями — совет посмотреть, а не запрет.
+  // Неразрешённая грамматическая стрелка Викисловаря (grammarOnly) — не значение:
+  // в сверку не идёт.
   const answers = [
-    { name: "Академия", text: academy && !academy.candidates ? academy.definition : "" },
-    { name: "Викисловарь", text: wiktionary?.gloss ?? "" },
+    { name: "Академия", text: academy && !academy.candidates ? academy.definition : "", advisory: true },
+    { name: "Викисловарь", text: wiktionary?.grammarOnly ? "" : wiktionary?.gloss ?? "" },
     { name: "Pealim", text: pealim?.meaning ?? "" },
   ].filter((answer) => answer.text);
 
@@ -270,14 +285,7 @@ app.get("/api/lookup/:term", async (req, res) => {
   // Значения из слишком коротких слов сравнению не поддаются.
   const comparable = answers.filter((answer) => significantWords(answer.text).size > 0);
 
-  const conflicts = [];
-  for (let i = 0; i < answers.length; i += 1) {
-    for (let j = i + 1; j < answers.length; j += 1) {
-      if (sourcesDisagree(answers[i].text, answers[j].text)) {
-        conflicts.push(`${answers[i].name} против ${answers[j].name}`);
-      }
-    }
-  }
+  const { blocking: conflicts, advisory } = conflictReport(answers);
 
   // Порядок важен. Неоднозначность Академии сама по себе не блокирует: у глаголов
   // почти всегда несколько терминологических записей, и если бы она перебивала
@@ -308,6 +316,8 @@ app.get("/api/lookup/:term", async (req, res) => {
       answers.length === 1
         ? `ответил только один источник (${answers[0].name}) — сравнить не с чем`
         : "сравнить нечем: значения слишком короткие для сверки";
+  } else if (advisory.length > 0) {
+    verdict = `Академия расходится с переводом (${advisory.join(", ")}) — её справка терминологическая, не перевод: взгляните сами; словари значений не противоречат`;
   } else if (answers.length > 0) {
     verdict = ambiguous
       ? "источники не противоречат, но у Академии есть похожие слова — учесть при записи"
@@ -327,6 +337,7 @@ app.get("/api/lookup/:term", async (req, res) => {
     wiktionary,
     pealim,
     disagree: conflicts.length > 0,
+    advisory,
     conflicts,
     verdict,
     errors: {
@@ -485,6 +496,21 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
+// Порт занимаем ДО работы с базой: он служит замком от вторых экземпляров.
+// Скопившиеся «node --watch» однажды перезапустились разом, наперегонки
+// выполнили sync({ alter: true }) — а это перестройка таблицы с перекладкой
+// строк — и стёрли данные друг у друга. Проигравший гонку за порт падает
+// здесь с EADDRINUSE, не успев открыть базу.
+const server = app.listen(PORT);
+await new Promise((resolve, reject) => {
+  server.once("listening", resolve);
+  server.once("error", reject);
+});
+
+// Копия — после замка (делает её только выживший экземпляр) и до sync
+// (пока базу никто не трогал).
+backupDatabase();
+
 await sequelize.sync({ alter: true });
 
 // Слова, заведённые до появления языков, метим по написанию.
@@ -496,6 +522,4 @@ for (const word of await Word.findAll()) {
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`Backend listening on http://localhost:${PORT} (db: ${dbKind})`);
-});
+console.log(`Backend listening on http://localhost:${PORT} (db: ${dbKind})`);

@@ -104,3 +104,32 @@ air conditioning
   assert.ok(entry.gloss.includes("merging"));
   assert.ok(entry.gloss.includes("air conditioning"));
 });
+
+// --- Стрелки на лемму ---
+// «To-infinitive of דיבר (dibér)» — это не значение, а грамматическая ссылка.
+// Из неё достаётся лемма (без огласовок — заголовки статей пишутся без них),
+// чтобы сходить за настоящим значением.
+import { formOfTarget } from "./wiktionary.js";
+
+test("инфинитивная стрелка даёт лемму", () => {
+  assert.equal(formOfTarget("To-infinitive of דיבר (dibér)"), "דיבר");
+});
+
+test("огласовки в лемме отбрасываются — статья лежит без них", () => {
+  assert.equal(formOfTarget("to-infinitive of הָלַךְ (halákh)."), "הלך");
+});
+
+test("другие грамматические формы тоже распознаются", () => {
+  assert.equal(formOfTarget("Defective spelling of דיבר"), "דיבר");
+  assert.equal(formOfTarget("feminine singular of גָּדוֹל"), "גדול");
+});
+
+test("обычное значение стрелкой не считается", () => {
+  assert.equal(formOfTarget("family (a group of people who are closely related)"), null);
+  assert.equal(formOfTarget("to speak, to talk"), null);
+});
+
+test("пустой ввод не ломает распознавание", () => {
+  assert.equal(formOfTarget(""), null);
+  assert.equal(formOfTarget(undefined), null);
+});
