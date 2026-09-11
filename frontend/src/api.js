@@ -51,3 +51,4 @@ export const fromAcademy = (id, href) =>
   request(`/api/words/${id}/academy`, json("POST", { overwrite: true, ...(href ? { href } : {}) }));
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));
+export const previewImport = (text) => request("/api/import/preview", json("POST", { text }));

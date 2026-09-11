@@ -8,6 +8,7 @@ import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
 import { drawImage } from "./draw.js";
+import { extractTerms } from "./importer.js";
 import { conflictReport, significantWords } from "./compare.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,16 @@ app.post("/api/words", async (req, res) => {
     nextDue: today(),
   });
   res.status(201).json(withoutImageBytes(word));
+});
+
+// Предпросмотр импорта: из вставленного текста урока вылавливаются ивритские
+// слова, уже имеющиеся в колоде помечаются. Сервер ничего не создаёт —
+// какие кандидаты станут карточками, человек решает галочками на клиенте.
+app.post("/api/import/preview", async (req, res) => {
+  const text = String(req.body?.text ?? "").slice(0, 20000);
+  const terms = extractTerms(text);
+  const existing = new Set((await Word.findAll({ attributes: ["term"] })).map((w) => w.term));
+  res.json({ candidates: terms.map((term) => ({ term, exists: existing.has(term) })) });
 });
 
 // Filling in a definition later, at home, when there is attention for it.

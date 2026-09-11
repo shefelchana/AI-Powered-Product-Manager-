@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, drawImage, dueWords, fromAcademy, fromPealim, listWords, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, drawImage, dueWords, fromAcademy, fromPealim, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { clozeFor, matches } from "./recall.js";
 
@@ -290,6 +290,7 @@ function AddScreen({ onAdded }) {
   }
 
   return (
+    <>
     <form onSubmit={submit}>
       <label className="field-label" htmlFor="term">Новое слово</label>
       <input
@@ -330,6 +331,116 @@ function AddScreen({ onAdded }) {
 
       {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
     </form>
+
+    <ImportBlock onAdded={onAdded} />
+    </>
+  );
+}
+
+// ---------- импорт из текста урока ----------
+
+// Текст вставляется как есть — с переводами и пометками: вылавливать ивритские
+// слова руками по одному скучно, это работа машины. А вот что из выловленного
+// станет карточками — решает человек: в тексте урока полно слов, которые и так
+// давно знакомы.
+function ImportBlock({ onAdded }) {
+  const [text, setText] = useState("");
+  const [candidates, setCandidates] = useState(null);
+  const [picked, setPicked] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  async function find() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const { candidates: found } = await previewImport(text);
+      setCandidates(found);
+      // Новые слова отмечены сразу, имеющиеся — нет: их добавлять некуда.
+      setPicked(new Set(found.filter((c) => !c.exists).map((c) => c.term)));
+      if (found.length === 0) setStatus({ kind: "error", text: "Ивритских слов в тексте не нашлось" });
+    } catch (error) {
+      setStatus({ kind: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle(term) {
+    const next = new Set(picked);
+    if (next.has(term)) next.delete(term);
+    else next.add(term);
+    setPicked(next);
+  }
+
+  async function addPicked() {
+    setBusy(true);
+    setStatus(null);
+    const failed = [];
+    let added = 0;
+    // По одному, а не разом: упавшее слово не должно утянуть за собой остальные.
+    for (const term of picked) {
+      try {
+        await addWord({ term });
+        added += 1;
+      } catch {
+        failed.push(term);
+      }
+    }
+    setBusy(false);
+    if (failed.length > 0) {
+      setStatus({ kind: "error", text: `Записано: ${added}. Не получилось: ${failed.join(", ")}` });
+      setPicked(new Set(failed));
+    } else {
+      setStatus({ kind: "ok", text: `Записано слов: ${added}` });
+      setText("");
+      setCandidates(null);
+      setPicked(new Set());
+    }
+    if (added > 0) onAdded();
+  }
+
+  return (
+    <details className="extra">
+      <summary>Импорт из текста урока</summary>
+      <label className="field-label" htmlFor="import-text">Вставь текст — слова найдутся сами</label>
+      <textarea
+        id="import-text"
+        dir="auto"
+        rows={5}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button className="quiet" type="button" onClick={find} disabled={busy || !text.trim()}>
+        {busy && candidates === null ? "Ищу…" : "Найти слова"}
+      </button>
+
+      {candidates?.length > 0 && (
+        <>
+          <ul className="import-list">
+            {candidates.map(({ term, exists }) => (
+              <li key={term}>
+                <label className={exists ? "muted" : ""}>
+                  <input
+                    type="checkbox"
+                    disabled={exists || busy}
+                    checked={picked.has(term)}
+                    onChange={() => toggle(term)}
+                  />
+                  <span dir="rtl">{term}</span>
+                  {exists && <span className="muted"> — уже в колоде</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+          <button className="primary" type="button" onClick={addPicked} disabled={busy || picked.size === 0}>
+            {busy ? "Записываю…" : `Добавить выбранные (${picked.size})`}
+          </button>
+        </>
+      )}
+
+      {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
+    </details>
   );
 }
 

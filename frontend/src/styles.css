@@ -503,3 +503,27 @@ button {
 .family li {
   margin-bottom: 0.4rem;
 }
+
+/* Импорт из текста урока: список кандидатов с галочками. */
+.import-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 6px;
+}
+.import-list label {
+  display: flex;
+  direction: ltr;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.import-list input[type="checkbox"] {
+  /* Глобальный стиль растягивает input на всю ширину — галочке это не идёт. */
+  width: auto;
+  flex: 0 0 auto;
+  accent-color: var(--accent, #6ea8fe);
+}
