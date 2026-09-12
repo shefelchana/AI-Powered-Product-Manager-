@@ -56,3 +56,6 @@ export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("P
 export const previewLesson = (jsonText) => request("/api/import/lesson", json("POST", { json: jsonText }));
 export const applyLesson = (lesson, picks) => request("/api/import/lesson/apply", json("POST", { lesson, picks }));
 export const listLessons = () => request("/api/lessons");
+export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${lang}`, json("POST", {}));
+export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
+export const recordAttempt = (wordId, formId, ok) => request("/api/practice/attempts", json("POST", { wordId, formId, ok }));

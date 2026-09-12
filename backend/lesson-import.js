@@ -17,6 +17,8 @@ const NIQQUD = /[֑-ׇ]/g;
 
 const str = (value, max = MAX_TEXT) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const hebrew = (value, max = 200) => str(value, max).replace(NIQQUD, "");
+// Кандидат — только то, что написано ивритом: русские пояснения модели в термин не идут.
+const isHebrew = (text) => /[א-ת]/.test(text);
 const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 const cyrillic = (text) => /[Ѐ-ӿ]/.test(text);
 
@@ -42,17 +44,17 @@ export function parseLessonJson(input) {
       timestamp: str(item.timestamp, 10),
       introducedBy: item.introducedBy === "student" ? "student" : "teacher",
     }))
-    .filter((item) => item.term)
+    .filter((item) => item.term && isHebrew(item.term))
     .slice(0, MAX_ITEMS);
   const corrections = (Array.isArray(raw.corrections) ? raw.corrections : [])
     .filter((c) => c && typeof c === "object")
     .map((c) => ({ said: hebrew(c.said, MAX_TEXT), corrected: hebrew(c.corrected, MAX_TEXT), kind: str(c.kind, 40), timestamp: str(c.timestamp, 10) }))
-    .filter((c) => c.corrected)
+    .filter((c) => c.corrected && isHebrew(c.corrected))
     .slice(0, MAX_ITEMS);
   const phrases = (Array.isArray(raw.phrases) ? raw.phrases : [])
     .filter((p) => p && typeof p === "object")
     .map((p) => ({ text: hebrew(p.text, MAX_TEXT), meaning: str(p.meaning), timestamp: str(p.timestamp, 10) }))
-    .filter((p) => p.text)
+    .filter((p) => p.text && isHebrew(p.text))
     .slice(0, MAX_ITEMS);
 
   return {
@@ -129,7 +131,7 @@ const sourceLabel = (lesson, timestamp) => {
 export async function applyLessonImport(meta, picks) {
   const chosen = (Array.isArray(picks) ? picks : [])
     .map((p) => ({ term: hebrew(p?.term), meaning: str(p?.meaning), example: hebrew(p?.example, MAX_TEXT), timestamp: str(p?.timestamp, 10) }))
-    .filter((p) => p.term);
+    .filter((p) => p.term && isHebrew(p.term));
   if (chosen.length === 0) throw new Error("Импортировать нечего: ни одного отмеченного кандидата");
 
   const lesson = await lessonFor(meta);

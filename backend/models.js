@@ -71,6 +71,8 @@ export const Word = sequelize.define("Word", {
   question: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   // Значение словами преподавателя. Словарное значение оно не заменяет.
   lessonNote: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  // Таблица форм глагола из Pealim, JSON-строкой. Пусто — не глагол или не запрашивали.
+  forms: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
@@ -112,3 +114,11 @@ Example.belongsTo(Lesson, { foreignKey: "lessonId" });
 Word.addScope("defaultScope", {
   include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]] }],
 }, { override: true });
+
+// Попытка в практике форм: по каким формам промахи, чтобы спрашивать их чаще.
+export const PracticeAttempt = sequelize.define("PracticeAttempt", {
+  wordId: { type: DataTypes.INTEGER, allowNull: false },
+  formId: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "" },
+  ok: { type: DataTypes.BOOLEAN, allowNull: false },
+});
+PracticeAttempt.belongsTo(Word, { foreignKey: "wordId" });

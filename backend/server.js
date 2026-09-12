@@ -8,7 +8,8 @@ import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
 import { startLesson, currentLesson, finishLesson } from "./lessons.js";
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
-import { Lesson } from "./models.js";
+import { Lesson, PracticeAttempt } from "./models.js";
+import { buildExercises } from "./practice.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -454,8 +455,59 @@ app.post("/api/words/:id/pealim", async (req, res) => {
   word.sourceUrl = found.sourceUrl;
   word.root = found.root;
   word.binyan = found.binyan;
+  if (found.forms && Object.keys(found.forms).length > 0) word.forms = JSON.stringify(found.forms);
   await word.save();
   res.json(withoutImageBytes(word));
+});
+
+// Практика форм. prepare — дотягивает таблицы спряжения для глаголов без форм
+// (не больше пяти за раз: Pealim чужой и небольшой, ходим редко); сам набор
+// упражнений собирается из того, что уже сохранено, без сети.
+const looksLikeVerb = (word) => word.lang === "he" && /^ל[א-ת]{3,}$/.test(word.term) && !word.forms;
+
+app.post("/api/practice/prepare", async (req, res) => {
+  const lang = langOf(req);
+  const candidates = (await Word.findAll({ where: { lang }, order: [["id", "DESC"]] })).filter(looksLikeVerb).slice(0, 5);
+  let fetched = 0;
+  const failed = [];
+  for (const word of candidates) {
+    try {
+      const found = await lookupPealim(word.term);
+      if (found?.forms && Object.keys(found.forms).length > 0) {
+        word.forms = JSON.stringify(found.forms);
+        if (!word.root) word.root = found.root;
+        if (!word.binyan) word.binyan = found.binyan;
+        fetched += 1;
+      } else {
+        // Запомнить, что форм нет, чтобы не спрашивать Pealim каждый раз.
+        word.forms = "{}";
+      }
+      await word.save();
+    } catch (error) {
+      failed.push(word.term);
+    }
+  }
+  res.json({ fetched, checked: candidates.length, failed });
+});
+
+app.get("/api/practice", async (req, res) => {
+  const lang = langOf(req);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 30);
+  const words = await Word.findAll({ where: { lang } });
+  const last = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  res.json(buildExercises(words, { limit, recentLessonId: last?.id ?? null }));
+});
+
+app.post("/api/practice/attempts", async (req, res) => {
+  const wordId = Number(req.body?.wordId);
+  const ok = req.body?.ok;
+  if (!Number.isInteger(wordId) || typeof ok !== "boolean") {
+    return res.status(400).json({ error: "Нужны wordId и ok: true или false" });
+  }
+  const word = await Word.findByPk(wordId);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  const attempt = await PracticeAttempt.create({ wordId, formId: clean(req.body?.formId, 40), ok });
+  res.status(201).json({ id: attempt.id });
 });
 
 // Слова того же корня. Корень — самая сильная связь между словами в иврите:

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, previewImport, previewLesson, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, previewImport, previewLesson, recordAttempt, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
@@ -596,6 +596,100 @@ function LessonImportBlock({ onAdded }) {
   );
 }
 
+// ---------- практика форм ----------
+
+// Как на уроке «хором»: перевод и подпись формы — пишешь форму на иврите.
+// Ответ известен точно (таблица Pealim или предлог с местоимением),
+// проверка та же щадящая, что в строгом режиме. Расписание не трогается.
+function PracticeScreen({ lang, onFinished }) {
+  const [items, setItems] = useState(null);
+  const [index, setIndex] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [result, setResult] = useState(null);
+  const [note, setNote] = useState("Готовлю формы…");
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const prepared = await preparePractice(lang);
+        if (prepared.fetched > 0) setNote(`Формы взяты из Pealim для ${prepared.fetched} глаголов`);
+        const set = await practiceSet(10, lang);
+        if (alive) { setItems(set); setNote(null); }
+      } catch (e) {
+        if (alive) { setError(e.message); setItems([]); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [lang]);
+
+  const ex = items?.[index];
+
+  async function check(event) {
+    event.preventDefault();
+    const ok = matches(typed, ex.answer);
+    setResult(ok ? "ok" : "miss");
+    try { await recordAttempt(ex.wordId, ex.formId, ok); } catch { /* журнал — не повод останавливать практику */ }
+  }
+
+  function next() {
+    setTyped("");
+    setResult(null);
+    setIndex(index + 1);
+  }
+
+  if (items === null) return <div className="review"><p className="muted">{note}</p></div>;
+  if (!ex) {
+    return (
+      <div className="done">
+        <p className="done-title">{items.length === 0 ? "Пока нечего тренировать" : "Фразы отработаны"}</p>
+        <p className="muted">{items.length === 0 ? "Нужны глаголы со значением (формы придут из Pealim) или словосочетания с предлогом" : `Сделано: ${items.length}`}</p>
+        {error && <p className="error">{error}</p>}
+        <button className="primary" onClick={onFinished}>Вернуться</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="review strict">
+      <p className="review-head">
+        <span className="muted">{index + 1} из {items.length}</span>
+        <button className="exit" onClick={onFinished}>Выйти</button>
+      </p>
+      {note && <p className="muted">{note}</p>}
+      <p className="prompt-label muted">{ex.kind === "form" ? "форма глагола" : "предлог с местоимением"}</p>
+      <p className="cloze" dir="ltr">{ex.prompt}</p>
+      <p className="form-label" dir="ltr">{ex.label}</p>
+
+      {result === null && (
+        <form onSubmit={check}>
+          <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
+          <button className="primary" type="submit">Проверить</button>
+          <button className="quiet" type="button" onClick={() => setResult("gaveup")}>Не помню</button>
+        </form>
+      )}
+
+      {result !== null && (
+        <div className="verdict">
+          {result === "ok" && <p className="ok">Верно ✓</p>}
+          {result === "miss" && (
+            <>
+              <p className="muted">Ты написала:</p>
+              <p className="typed" dir="rtl">{typed}</p>
+            </>
+          )}
+          <p className="review-term" dir="rtl">
+            {ex.answerVocalized || ex.answer} <SpeakButton text={ex.answer} lang="he" />
+          </p>
+          <p className="muted">{ex.term} · {ex.label}</p>
+          <button className="primary" onClick={next}>Дальше</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- к уроку ----------
 
 // Накануне урока: слова прошлого урока целиком (не только просроченные),
@@ -1111,7 +1205,7 @@ export default function App() {
         {pending > 0 && <> · без объяснения: <strong>{pending}</strong></>}
       </p>
 
-      {view !== "review" && (
+      {view !== "review" && view !== "practice" && (
         <nav className="nav">
           <button className={view === "day" ? "tab active" : "tab"} onClick={() => setView("day")}>
             Слово дня
@@ -1128,25 +1222,32 @@ export default function App() {
         </nav>
       )}
 
-      {view !== "review" && dueCount > 3 && (
+      {view !== "review" && view !== "practice" && dueCount > 3 && (
         <button className="quiet" onClick={() => startReview(3)}>
           Нет сил — только 3 слова
         </button>
       )}
 
       {/* Вход в сессию, а не настройка: настройка была бы лишним решением. */}
-      {view !== "review" && dueCount > 0 && canSpeak() && (
+      {view !== "review" && view !== "practice" && dueCount > 0 && canSpeak() && (
         <button className="quiet" onClick={() => startReview(10, true)}>
           Повторять на слух
         </button>
       )}
 
-      {view !== "review" && <PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
+      {view !== "review" && view !== "practice" && (
+        <button className="quiet" onClick={() => setView("practice")}>
+          Фразы: формы глагола и предлоги
+        </button>
+      )}
+
+      {view !== "review" && view !== "practice" && <PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
 
       {error && <p className="error">{error}</p>}
 
       {(showHelp || words.length === 0) && <Help lang={lang} />}
 
+      {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("add"); reload(); }} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "words" && <WordsScreen words={mine} onChanged={reload} />}

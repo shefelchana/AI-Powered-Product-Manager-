@@ -558,3 +558,9 @@ button {
 .cand-term { font-size: 1.15rem; font-weight: 600; margin-left: 0.4rem; }
 .cand-meaning { margin: 0.1rem 0 0 1.6rem; }
 .cand-example { margin: 0.1rem 0 0 1.6rem; opacity: 0.8; }
+
+.form-label {
+  font-size: 1.1rem;
+  margin: -1rem 0 1.25rem;
+  opacity: 0.85;
+}

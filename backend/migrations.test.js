@@ -135,3 +135,11 @@ test("база, где sync уже добавил lessonId, мигрирует �
   await migrate(db);
   assert.deepEqual(await pendingMigrations(db), []);
 });
+
+test("0005: у слова есть forms, есть таблица PracticeAttempts", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  assert.ok((await qi.describeTable("Words")).forms);
+  assert.ok((await qi.showAllTables()).includes("PracticeAttempts"));
+});
