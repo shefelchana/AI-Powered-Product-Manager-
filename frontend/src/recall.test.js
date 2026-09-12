@@ -63,3 +63,80 @@ test("слово без термина не ломает функцию", () => 
   assert.equal(clozeFor({ term: "", examples: "משהו" }), null);
   assert.equal(clozeFor(null), null);
 });
+
+// ---------- этап 1 roadmap: откуда берётся вопрос строгого режима ----------
+import { promptFor } from "./recall.js";
+
+const word = (extra) => ({ term: "לצמצם", lang: "he", translation: "", definition: "", definitionSource: "", exampleList: [], ...extra });
+
+test("своя фраза важнее всего: пропуск на месте слова, подпись «твоя фраза»", () => {
+  const w = word({
+    translation: "сокращать",
+    exampleList: [
+      { text: "התקציב הצטמצם", origin: "lesson" },
+      { text: "צריך לצמצם הוצאות", origin: "own" },
+    ],
+  });
+  const q = promptFor(w);
+  assert.equal(q.kind, "own");
+  assert.equal(q.prompt, "צריך ___ הוצאות");
+  assert.equal(q.answer, "לצמצם");
+  assert.equal(q.dir, "rtl");
+});
+
+test("нет своей — берётся фраза урока с подписью источника", () => {
+  const w = word({ translation: "сокращать", exampleList: [{ text: "כדאי לצמצם הוצאות", origin: "lesson" }] });
+  const q = promptFor(w);
+  assert.equal(q.kind, "lesson");
+  assert.equal(q.prompt, "כדאי ___ הוצאות");
+  assert.match(q.label, /урок/);
+});
+
+test("фраза, в которой слова нет дословно, пропускается — идём к переводу", () => {
+  const w = word({ translation: "сокращать", exampleList: [{ text: "התקציב הצטמצם", origin: "own" }] });
+  const q = promptFor(w);
+  assert.equal(q.kind, "translation");
+  assert.equal(q.prompt, "сокращать");
+  assert.equal(q.dir, "ltr");
+  assert.equal(q.label, "твой перевод");
+});
+
+test("без перевода — значение словаря по-английски, с подписью источника", () => {
+  const w = word({ definition: "to reduce, to cut down", definitionSource: "pealim" });
+  const q = promptFor(w);
+  assert.equal(q.kind, "meaning");
+  assert.equal(q.prompt, "to reduce, to cut down");
+  assert.equal(q.label, "Pealim");
+});
+
+test("у Академии в строке стоит само слово — берём только часть после тире", () => {
+  const w = word({ term: "טענה", definition: "טַעֲנָה; עֲתִירָה — plea\nטַעֲנָה — proposition\nטַעֲנָה — claim", definitionSource: "academy" });
+  const q = promptFor(w);
+  assert.equal(q.kind, "meaning");
+  assert.equal(q.prompt, "plea; proposition; claim");
+  assert.equal(q.label, "Академия");
+});
+
+test("вопрос, в котором виден ответ, не годится: такое значение пропускается", () => {
+  const w = word({ term: "מיזוג", definition: "מיזוג — это слияние компаний", definitionSource: "typed" });
+  assert.equal(promptFor(w), null);
+});
+
+test("сгенерированное объяснение подписано так, чтобы было видно, что это не источник", () => {
+  const w = word({ definition: "сокращать, уменьшать что-либо", definitionSource: "generated" });
+  const q = promptFor(w);
+  assert.equal(q.label, "сгенерировано");
+});
+
+test("ничего нет — строгого режима нет", () => {
+  assert.equal(promptFor(word({})), null);
+  assert.equal(promptFor(word({ translation: "  " })), null);
+  assert.equal(promptFor(null), null);
+});
+
+test("старое поле examples строкой тоже читается как свои фразы", () => {
+  const w = { term: "מענק", lang: "he", examples: "קיבלתי מענק" };
+  const q = promptFor(w);
+  assert.equal(q.kind, "own");
+  assert.equal(q.prompt, "קיבלתי ___");
+});

@@ -403,10 +403,15 @@ button {
 
 /* ---------- строгий режим ---------- */
 
+.prompt-label {
+  margin: 1.5rem 0 0;
+  font-size: 0.9rem;
+}
+
 .cloze {
   font-size: 1.7rem;
   line-height: 1.7;
-  margin: 1.5rem 0;
+  margin: 0.25rem 0 1.5rem;
 }
 
 .verdict {

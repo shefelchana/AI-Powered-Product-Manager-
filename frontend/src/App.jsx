@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, deleteWord, drawImage, dueWords, fromPealim, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
-import { clozeFor, matches } from "./recall.js";
+import { matches, promptFor } from "./recall.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
@@ -466,7 +466,10 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
 
   return (
     <div className="strict">
-      <p className="cloze" dir={dirOf(word.lang)}>{cloze.prompt}</p>
+      {/* Откуда вопрос — видно всегда: своя фраза, урок, перевод или словарь.
+          Вопрос может быть на другом языке, чем ответ: направление письма — своё. */}
+      <p className="prompt-label muted">{cloze.label}</p>
+      <p className="cloze" dir={cloze.dir}>{cloze.prompt}</p>
 
       {result === null && (
         <form onSubmit={check}>
@@ -628,11 +631,11 @@ function ReviewScreen({ queue, onFinished, listen }) {
     setCards([...cards.slice(0, index), ...cards.slice(index + 1), word]);
   }
 
-  // Строгий режим работает там, где есть своя фраза с этим словом.
-  // Нет фразы — сверять не с чем, остаётся раскрытие.
+  // Строгий режим берёт вопрос по приоритету: своя фраза → фраза урока →
+  // перевод → значение из словаря (см. promptFor). Ничего нет — раскрытие.
   // На слух строгий ввод выключен: слушать и писать одновременно — уже другое
   // упражнение. На слух тренируется узнавание, строгий режим — воспроизведение.
-  const cloze = listen ? null : clozeFor(word);
+  const cloze = listen ? null : promptFor(word);
 
   return (
     <div className="review">
