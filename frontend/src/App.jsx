@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, previewImport, previewLesson, recordAttempt, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, recordAttempt, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
@@ -306,7 +306,6 @@ function AddScreen({ onAdded }) {
   const [term, setTerm] = useState("");
   const [definition, setDefinition] = useState("");
   const [translation, setTranslation] = useState("");
-  const [question, setQuestion] = useState(false);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const termInput = useRef(null);
@@ -317,12 +316,11 @@ function AddScreen({ onAdded }) {
     setSaving(true);
     setStatus(null);
     try {
-      const word = await addWord({ term, definition, translation, question });
+      const word = await addWord({ term, definition, translation });
       // Успех — и только успех — очищает поля.
       setTerm("");
       setDefinition("");
       setTranslation("");
-      setQuestion(false);
       setStatus({ kind: "ok", text: `«${word.term}» записано` });
       onAdded();
     } catch (error) {
@@ -371,12 +369,6 @@ function AddScreen({ onAdded }) {
         />
       </details>
 
-      {/* «?» — не поняла, спросить на следующем уроке. Одна галочка, не поле. */}
-      <label className="check">
-        <input type="checkbox" checked={question} onChange={(e) => setQuestion(e.target.checked)} />
-        {" "}не поняла — спросить
-      </label>
-
       <button className="primary" type="submit" disabled={saving}>
         {saving ? "Сохраняю…" : "Сохранить"}
       </button>
@@ -384,218 +376,13 @@ function AddScreen({ onAdded }) {
       {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
     </form>
 
-    <ImportBlock onAdded={onAdded} />
-    <LessonImportBlock onAdded={onAdded} />
     </>
   );
 }
 
-// ---------- импорт из текста урока ----------
-
-// Текст вставляется как есть — с переводами и пометками: вылавливать ивритские
-// слова руками по одному скучно, это работа машины. А вот что из выловленного
-// станет карточками — решает человек: в тексте урока полно слов, которые и так
-// давно знакомы.
-function ImportBlock({ onAdded }) {
-  const [text, setText] = useState("");
-  const [candidates, setCandidates] = useState(null);
-  const [picked, setPicked] = useState(new Set());
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(null);
-
-  async function find() {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const { candidates: found } = await previewImport(text);
-      setCandidates(found);
-      // Новые слова отмечены сразу, имеющиеся — нет: их добавлять некуда.
-      setPicked(new Set(found.filter((c) => !c.exists).map((c) => c.term)));
-      if (found.length === 0) setStatus({ kind: "error", text: "Ивритских слов в тексте не нашлось" });
-    } catch (error) {
-      setStatus({ kind: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggle(term) {
-    const next = new Set(picked);
-    if (next.has(term)) next.delete(term);
-    else next.add(term);
-    setPicked(next);
-  }
-
-  async function addPicked() {
-    setBusy(true);
-    setStatus(null);
-    const failed = [];
-    let added = 0;
-    // По одному, а не разом: упавшее слово не должно утянуть за собой остальные.
-    for (const term of picked) {
-      try {
-        await addWord({ term });
-        added += 1;
-      } catch {
-        failed.push(term);
-      }
-    }
-    setBusy(false);
-    if (failed.length > 0) {
-      setStatus({ kind: "error", text: `Записано: ${added}. Не получилось: ${failed.join(", ")}` });
-      setPicked(new Set(failed));
-    } else {
-      setStatus({ kind: "ok", text: `Записано слов: ${added}` });
-      setText("");
-      setCandidates(null);
-      setPicked(new Set());
-    }
-    if (added > 0) onAdded();
-  }
-
-  return (
-    <details className="extra">
-      <summary>Импорт из текста урока</summary>
-      <label className="field-label" htmlFor="import-text">Вставь текст — слова найдутся сами</label>
-      <textarea
-        id="import-text"
-        dir="auto"
-        rows={5}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <button className="quiet" type="button" onClick={find} disabled={busy || !text.trim()}>
-        {busy && candidates === null ? "Ищу…" : "Найти слова"}
-      </button>
-
-      {candidates?.length > 0 && (
-        <>
-          <ul className="import-list">
-            {candidates.map(({ term, exists }) => (
-              <li key={term}>
-                <label className={exists ? "muted" : ""}>
-                  <input
-                    type="checkbox"
-                    disabled={exists || busy}
-                    checked={picked.has(term)}
-                    onChange={() => toggle(term)}
-                  />
-                  <span dir="rtl">{term}</span>
-                  {exists && <span className="muted"> — уже в колоде</span>}
-                </label>
-              </li>
-            ))}
-          </ul>
-          <button className="primary" type="button" onClick={addPicked} disabled={busy || picked.size === 0}>
-            {busy ? "Записываю…" : `Добавить выбранные (${picked.size})`}
-          </button>
-        </>
-      )}
-
-      {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
-    </details>
-  );
-}
 
 // ---------- импорт разбора урока ----------
 
-// Разбор урока приходит JSON-файлом из конвейера расшифровки (или конспектом
-// преподавателя, прогнанным через тот же промпт). Здесь — тройки
-// «слово · значение · фраза» с галочками. Сервер ничего не пишет, пока не
-// нажата «Записать»: что попадёт в колоду, решает человек.
-function LessonImportBlock({ onAdded }) {
-  const [text, setText] = useState("");
-  const [preview, setPreview] = useState(null);
-  const [picked, setPicked] = useState(new Set());
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(null);
-
-  async function find() {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const result = await previewLesson(text);
-      setPreview(result);
-      // Отмечено то, что даст новое: новые слова и фразы к знакомым.
-      setPicked(new Set(result.candidates.filter((c) => !c.exists || (c.example && !c.hasExample)).map((c) => c.term)));
-      if (result.candidates.length === 0 && (result.sentences ?? []).length === 0) setStatus({ kind: "error", text: "В разборе не нашлось ни слов, ни предложений" });
-    } catch (error) {
-      setStatus({ kind: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggle(term) {
-    const next = new Set(picked);
-    if (next.has(term)) next.delete(term);
-    else next.add(term);
-    setPicked(next);
-  }
-
-  async function write() {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const picks = preview.candidates.filter((c) => picked.has(c.term));
-      const result = await applyLesson(preview.lesson, picks, preview.sentences ?? []);
-      setStatus({ kind: "ok", text: `Урок ${formatLessonDate(preview.lesson.date)}: новых слов ${result.added}, дополнено ${result.updated}, предложений ${result.sentences ?? 0}` });
-      setText("");
-      setPreview(null);
-      setPicked(new Set());
-      onAdded();
-    } catch (error) {
-      setStatus({ kind: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const kindLabel = { word: "", correction: "исправление", phrase: "фраза" };
-
-  return (
-    <details className="extra">
-      <summary>Импорт из разбора урока</summary>
-      <label className="field-label" htmlFor="lesson-json">Вставь JSON разбора урока</label>
-      <textarea
-        id="lesson-json"
-        dir="ltr"
-        rows={4}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder='{"lesson": {...}, "items": [...]}'
-      />
-      <button className="quiet" type="button" onClick={find} disabled={busy || !text.trim()}>
-        {busy && preview === null ? "Разбираю…" : "Показать кандидатов"}
-      </button>
-
-      {preview && (preview.candidates.length > 0 || (preview.sentences ?? []).length > 0) && (
-        <>
-          <p className="muted">Урок {formatLessonDate(preview.lesson.date)}{preview.lesson.title ? ` · ${preview.lesson.title}` : ""} · слов: {preview.candidates.length} · предложений для практики: {(preview.sentences ?? []).length}</p>
-          <ul className="import-list lesson-import">
-            {preview.candidates.map((c) => (
-              <li key={c.term}>
-                <label>
-                  <input type="checkbox" disabled={busy} checked={picked.has(c.term)} onChange={() => toggle(c.term)} />
-                  <span className="cand-term" dir="rtl">{c.term}</span>
-                  {c.exists && <span className="muted"> · уже в колоде{c.hasDefinition ? "" : ", без значения"}</span>}
-                  {kindLabel[c.kind] && <span className="muted"> · {kindLabel[c.kind]}</span>}
-                </label>
-                {c.meaning && <div className="cand-meaning">{c.meaning}</div>}
-                {c.example && <div className="cand-example" dir="rtl">{c.example}{c.hasExample ? " (уже есть)" : ""}</div>}
-              </li>
-            ))}
-          </ul>
-          <button className="primary" type="button" onClick={write} disabled={busy || (picked.size === 0 && (preview.sentences ?? []).length === 0)}>
-            {busy ? "Записываю…" : `Записать (слов ${picked.size}, предложений ${(preview.sentences ?? []).length})`}
-          </button>
-        </>
-      )}
-
-      {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
-    </details>
-  );
-}
 
 // Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
 const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
@@ -732,28 +519,15 @@ function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
 // Накануне урока: слова прошлого урока целиком (не только просроченные),
 // без записи в расписание, и список «?» — что спросить.
 function PrepBlock({ words, lessons, onStart }) {
-  const { lesson, words: lessonWords, questions } = lessonSummary(words, lessons);
-  if (!lesson && questions.length === 0) return null;
+  const { lesson, words: lessonWords } = lessonSummary(words, lessons);
+  if (!lesson || lessonWords.length === 0) return null;
+  const title = lesson.title ? lesson.title.replace(/ · Hebreway$/, "") : `урок ${formatDate(lesson.date)}`;
   return (
     <div className="prep">
-      {lesson && (
-        <>
-          <p className="prep-head">К уроку · прошлый урок {formatDate(lesson.date)}{lesson.title ? ` · ${lesson.title}` : ""}</p>
-          <button className="secondary" type="button" disabled={lessonWords.length === 0} onClick={() => onStart(lessonWords)}>
-            Повторить урок ({lessonWords.length})
-          </button>
-        </>
-      )}
-      {questions.length > 0 && (
-        <>
-          <p className="muted" style={{ marginTop: "0.75rem" }}>Спросить на уроке:</p>
-          <ul>
-            {questions.map((w) => (
-              <li key={w.id}><span dir={dirOf(w.lang)}>{w.term}</span>{w.translation ? <span className="muted"> — {w.translation}</span> : null}</li>
-            ))}
-          </ul>
-        </>
-      )}
+      <p className="prep-head">К уроку: {title}</p>
+      <button className="secondary" type="button" onClick={() => onStart(lessonWords)}>
+        Повторить урок ({lessonWords.length})
+      </button>
     </div>
   );
 }
@@ -1005,7 +779,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
   if (!open) {
     return (
       <button className="word-row" onClick={onToggle}>
-        <span className="word-row-term" dir={dirOf(word.lang)}>{word.question ? "? " : ""}{word.term}</span>
+        <span className="word-row-term" dir={dirOf(word.lang)}>{word.term}</span>
         <span className="muted">
           {word.definition ? `коробка ${word.box}` : "без объяснения"}
         </span>
@@ -1082,13 +856,6 @@ function WordRow({ word, open, onToggle, onChanged }) {
           onClick={() => run(() => fromPealim(word.id))}
         >
           Из Pealim
-        </button>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => run(() => updateWord(word.id, { question: !word.question }))}
-        >
-          {word.question ? "Спросила — снять «?»" : "Не поняла — «?»"}
         </button>
         <button
           className="secondary"
