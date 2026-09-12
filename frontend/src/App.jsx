@@ -1044,7 +1044,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
 // Прогресс без стриков: куда движется колода, что держится через неделю,
 // что не держится, по урокам, в какие дни повторяла.
 const STAGE_ORDER = [["new", "новое"], ["day1", "через день"], ["day3", "через 3 дня"], ["week", "через неделю"], ["settling", "закрепляется"], ["learned", "выучено"]];
-function ProgressBlock({ report, stats }) {
+function ProgressBlock({ report, stats, onLesson }) {
   if (!report) return null;
   const total = Object.values(report.stages).reduce((a, b) => a + b, 0) || 1;
   const pct = (n) => Math.round((n / total) * 100);
@@ -1077,7 +1077,18 @@ function ProgressBlock({ report, stats }) {
         </p>
       )}
       {report.lessons.length > 0 && (
-        <p className="muted">По урокам: {report.lessons.slice(0, 4).map((l) => `${l.title.replace(/ · Hebreway$/, "") || l.date}: держится ${l.holding} из ${l.total}${l.learned ? `, выучено ${l.learned}` : ""}`).join(" · ")}</p>
+        <div className="lesson-list">
+          <p className="muted">По урокам — можно повторить слова любого занятия, без записи в расписание:</p>
+          {report.lessons.slice(0, 6).map((l) => (
+            <div key={l.id} className="lesson-row">
+              <span>
+                {l.title.replace(/ · Hebreway$/, "") || l.date}
+                <span className="muted"> · держится {l.holding} из {l.total}{l.learned ? `, выучено ${l.learned}` : ""}</span>
+              </span>
+              <button className="secondary small-btn" type="button" onClick={() => onLesson(l.id)}>Повторить</button>
+            </div>
+          ))}
+        </div>
       )}
       {report.forms.length > 0 && (
         <p className="muted">Формы: {report.forms.slice(0, 6).map((f) => `${f.label} ${f.correct}/${f.asked}`).join(" · ")}</p>
@@ -1187,9 +1198,13 @@ export default function App() {
   // Накануне урока: все слова прошлого урока, не только просроченные,
   // и без записи в расписание.
   function startLessonReview(words) {
+    if (words.length === 0) return;
     setQueue(words);
     setListen(false);
     setPractice(true);
+    setAhead(false);
+    // Режим «учить» пишет в расписание по итогам раунда — прогон урока идёт строгим режимом.
+    if (mode === "learn") setMode("type");
     setView("review");
   }
 
@@ -1246,7 +1261,7 @@ export default function App() {
           onAhead={(limit, how) => startReview(limit, false, how, true)}
           onPractice={() => setView("practice")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
-          progress={<ProgressBlock report={report} stats={{ phrases, pending }} />}
+          progress={<ProgressBlock report={report} stats={{ phrases, pending }} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
