@@ -1225,11 +1225,12 @@ export default function App() {
 
   return (
     <main>
-      <h1>Слова с занятий</h1>
-
-      <button className="quiet help-toggle" onClick={() => setShowHelp(!showHelp)}>
-        {showHelp ? "Свернуть инструкцию" : "Как этим пользоваться"}
-      </button>
+      <header className="top">
+        <h1>Слова с занятий</h1>
+        <button className="quiet help-toggle" onClick={() => setShowHelp(!showHelp)}>
+          {showHelp ? "Свернуть" : "Как пользоваться"}
+        </button>
+      </header>
 
       {otherLangs.length > 0 && (
         <nav className="langs">
@@ -1256,10 +1257,10 @@ export default function App() {
             Добавить
           </button>
           <button className={view === "reviewmenu" ? "tab active" : "tab"} onClick={() => setView("reviewmenu")}>
-            Повторять{dueCount > 0 ? ` (${dueCount})` : ""}
+            Повторять{dueCount > 0 ? ` · ${dueCount}` : ""}
           </button>
           <button className={view === "words" ? "tab active" : "tab"} onClick={() => setView("words")}>
-            Слова ({mine.length})
+            Слова · {mine.length}
           </button>
         </nav>
       )}
