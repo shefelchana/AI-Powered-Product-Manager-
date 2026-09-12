@@ -574,3 +574,20 @@ button {
 .sentence-input { min-height: 5.5rem; resize: vertical; font-size: 1.3rem; line-height: 1.5; }
 
 .done .secondary { margin-right: 0.6rem; }
+
+.hint { font-size: 1.05rem; margin: -0.75rem 0 1.25rem; }
+.choices4 { display: flex; flex-direction: column; gap: 0.6rem; margin: 1rem 0; }
+.choice {
+  padding: 0.9rem 1rem;
+  font: inherit;
+  font-size: 1.1rem;
+  text-align: left;
+  color: #e8eaed;
+  background: #1d2026;
+  border: 1px solid #2b2f37;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+.choice-right { border-color: #6ee7a8; background: #173326; }
+.choice-wrong { border-color: #ff8a8a; background: #3a1f1f; }
+.choice-dim { opacity: 0.5; }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, recordAttempt, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
-import { matches, promptFor } from "./recall.js";
+import { choicesFor, matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
 
 // Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
@@ -502,12 +502,18 @@ function PracticeScreen({ lang, onFinished }) {
 function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
   return (
     <div className="review-menu">
-      <button className="primary" onClick={() => onReview(10, false)} disabled={dueCount === 0}>
-        {dueCount === 0 ? "На сегодня всё повторено" : `Повторить ${Math.min(dueCount, 10)} ${dueCount === 1 ? "слово" : "слов"}`}
-      </button>
+      {dueCount === 0 ? (
+        <p className="muted">На сегодня всё повторено.</p>
+      ) : (
+        <>
+          <p className="muted">К повторению: {dueCount}</p>
+          <button className="primary" onClick={() => onReview(10, false, "type")}>Написать на иврите по переводу</button>
+          <button className="primary" onClick={() => onReview(10, false, "choose")}>Выбрать перевод из четырёх</button>
+        </>
+      )}
       <div className="review-menu-row">
-        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false)}>Нет сил — только 3</button>}
-        {dueCount > 0 && canListen && <button className="secondary" onClick={() => onReview(10, true)}>На слух</button>}
+        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "type")}>Нет сил — только 3</button>}
+        {dueCount > 0 && canListen && <button className="secondary" onClick={() => onReview(10, true, "type")}>На слух</button>}
         <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
       </div>
       {prep}
@@ -535,6 +541,45 @@ function PrepBlock({ words, lessons, onStart }) {
 
 // ---------- повторение ----------
 
+// Выбор перевода из четырёх: слово на иврите → какой перевод. Это узнавание,
+// а не воспроизведение, поэтому режим второй, не вместо строгого. Варианты —
+// переводы других слов колоды: похожие по теме, значит честные.
+function ChoiceCard({ word, choice, onAnswer }) {
+  const [picked, setPicked] = useState(null);
+  const done = picked !== null;
+  const right = done && picked === choice.correct;
+
+  useEffect(() => {
+    if (!right) return undefined;
+    const timer = setTimeout(() => onAnswer(true), 800);
+    return () => clearTimeout(timer);
+  }, [right]);
+
+  return (
+    <div className="strict">
+      <p className="prompt-label muted">какой перевод?</p>
+      <p className="review-term" dir="rtl">{word.term} <SpeakButton text={word.term} lang={word.lang} /></p>
+      <div className="choices4">
+        {choice.options.map((option, i) => {
+          const cls = !done ? "choice" : i === choice.correct ? "choice choice-right" : i === picked ? "choice choice-wrong" : "choice choice-dim";
+          return (
+            <button key={i} className={cls} disabled={done} onClick={() => setPicked(i)} dir="ltr">
+              {option}
+            </button>
+          );
+        })}
+      </div>
+      {done && !right && (
+        <div className="verdict">
+          <p className="muted">Верно: {choice.options[choice.correct]}</p>
+          <button className="primary" onClick={() => onAnswer(false)}>Дальше</button>
+        </div>
+      )}
+      {done && right && <p className="ok">Верно ✓</p>}
+    </div>
+  );
+}
+
 // Строгий режим: сначала пишешь ответ, потом видишь правильный. Узнавание
 // ощущается как знание, поэтому «показал и решил, что знал» — не проверка.
 function StrictCard({ word, cloze, onAnswer, onRequeue }) {
@@ -559,6 +604,7 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
           Вопрос может быть на другом языке, чем ответ: направление письма — своё. */}
       <p className="prompt-label muted">{cloze.label}</p>
       <p className="cloze" dir={cloze.dir}>{cloze.prompt}</p>
+      {cloze.hint && <p className="hint muted" dir="rtl">{cloze.hint}</p>}
 
       {result === null && (
         <form onSubmit={check}>
@@ -688,7 +734,7 @@ function RevealCard({ word, onAnswer, listen }) {
   );
 }
 
-function ReviewScreen({ queue, onFinished, onMore, listen, practice = false }) {
+function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "type", practice = false }) {
   const [cards, setCards] = useState(queue);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -727,7 +773,8 @@ function ReviewScreen({ queue, onFinished, onMore, listen, practice = false }) {
   // перевод → значение из словаря (см. promptFor). Ничего нет — раскрытие.
   // На слух строгий ввод выключен: слушать и писать одновременно — уже другое
   // упражнение. На слух тренируется узнавание, строгий режим — воспроизведение.
-  const cloze = listen ? null : promptFor(word);
+  const cloze = listen || mode === "choose" ? null : promptFor(word);
+  const choice = mode === "choose" && !listen ? choicesFor(word, pool) : null;
 
   return (
     <div className="review">
@@ -736,7 +783,9 @@ function ReviewScreen({ queue, onFinished, onMore, listen, practice = false }) {
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
 
-      {cloze ? (
+      {choice ? (
+        <ChoiceCard key={word.id} word={word} choice={choice} onAnswer={answer} />
+      ) : cloze ? (
         <StrictCard
           key={word.id}
           word={word}
@@ -939,6 +988,7 @@ export default function App() {
   const [queue, setQueue] = useState([]);
   const [listen, setListen] = useState(false);
   const [practice, setPractice] = useState(false);
+  const [mode, setMode] = useState("type");
   const [lessons, setLessons] = useState([]);
   const [error, setError] = useState(null);
 
@@ -973,13 +1023,14 @@ export default function App() {
   const learned = mine.filter((word) => word.box === 5).length;
   const phrases = mine.reduce((sum, word) => sum + exampleList(word).length, 0);
 
-  async function startReview(limit, byEar = false) {
+  async function startReview(limit, byEar = false, how = "type") {
     try {
       const next = await dueWords(limit, lang);
       await reload();
       if (next.length === 0) { setView("reviewmenu"); return; }
       setQueue(next);
       setListen(byEar);
+      setMode(how);
       setPractice(false);
       setView("review");
     } catch (err) {
@@ -1046,7 +1097,7 @@ export default function App() {
         <ReviewMenu
           dueCount={dueCount}
           canListen={canSpeak()}
-          onReview={(limit, byEar) => startReview(limit, byEar)}
+          onReview={(limit, byEar, how) => startReview(limit, byEar, how)}
           onPractice={() => setView("practice")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
         />
@@ -1059,9 +1110,11 @@ export default function App() {
         <ReviewScreen
           queue={queue}
           listen={listen}
+          pool={mine}
+          mode={mode}
           practice={practice}
           onFinished={() => { setView("reviewmenu"); reload(); }}
-          onMore={() => startReview(10, listen)}
+          onMore={() => startReview(10, listen, mode)}
         />
       )}
     </main>
