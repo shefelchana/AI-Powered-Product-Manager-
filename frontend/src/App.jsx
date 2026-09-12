@@ -250,6 +250,8 @@ function DayScreen({ lang, onChanged }) {
   return (
     <div className="day">
       <p className="field-label">Слово дня</p>
+      {/* Почему именно это слово — правило видно, а не спрятано (Анна, 12.09). */}
+      {word.reason && <p className="day-reason">{word.reason}</p>}
       <WordImage word={word} />
       <p className="day-term" dir={dirOf(word.lang)}>
         {word.term} <SpeakButton text={word.term} lang={word.lang} />

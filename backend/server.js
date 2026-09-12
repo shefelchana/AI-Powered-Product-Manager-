@@ -11,6 +11,7 @@ import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-i
 import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
 import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
+import { pickWordOfDay } from "./day.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -254,28 +255,27 @@ app.patch("/api/words/:id/review", async (req, res) => {
   res.json(withoutImageBytes(word));
 });
 
-// Слово дня: одно слово, с которым живёшь весь день. Берём из плохо знакомых
-// (коробки 1-2) и не повторяем то, что уже было — техника про новое слово.
+// Слово дня: одно слово, с которым живёшь весь день, и видимая причина,
+// почему именно оно (правило — в day.js). Выбор фиксируется на день.
 app.get("/api/word-of-day", async (req, res) => {
   const lang = langOf(req);
   const picked = await Word.findOne({ where: { dayPickedAt: today(), lang } });
-  if (picked) return res.json(withoutImageBytes(picked));
+  if (picked) return res.json({ ...withoutImageBytes(picked), reason: picked.dayReason });
 
-  const candidates = await Word.findAll({
-    where: { box: { [Op.lte]: 2 }, lang },
-    order: [["createdAt", "ASC"]],
+  const words = await Word.findAll({ where: { lang } });
+  if (words.length === 0) return res.json(null);
+  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  const reviewed = await ReviewAttempt.findAll({ attributes: ["wordId"], group: ["wordId"] });
+  const choice = pickWordOfDay(words.map((w) => w.toJSON()), {
+    lastLessonId: lastLesson?.id ?? null,
+    reviewedIds: new Set(reviewed.map((r) => r.wordId)),
+    today: today(),
   });
-  if (candidates.length === 0) return res.json(null);
-
-  // Сначала то, что ни разу не было словом дня, потом самое давнее.
-  const never = candidates.filter((w) => !w.dayPickedAt);
-  const pool = never.length ? never : candidates;
-  pool.sort((a, b) => String(a.dayPickedAt ?? "").localeCompare(String(b.dayPickedAt ?? "")));
-
-  const word = pool[0];
+  const word = await Word.findByPk(choice.word.id);
   word.dayPickedAt = today();
+  word.dayReason = choice.reason;
   await word.save();
-  res.json(withoutImageBytes(word));
+  res.json({ ...withoutImageBytes(word), reason: word.dayReason });
 });
 
 app.post("/api/words/:id/examples", async (req, res) => {

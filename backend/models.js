@@ -58,6 +58,7 @@ export const Word = sequelize.define("Word", {
   examples: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   // The day this word was the word of the day, so it is not picked twice.
   dayPickedAt: { type: DataTypes.DATEONLY, allowNull: true },
+  dayReason: { type: DataTypes.STRING(80), allowNull: false, defaultValue: "" },
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
   // Списки языков раздельные: иврит учится отдельно от английского.
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
