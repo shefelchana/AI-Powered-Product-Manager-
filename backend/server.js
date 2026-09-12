@@ -33,7 +33,8 @@ app.get("/api/health", async (req, res) => {
   try {
     await sequelize.authenticate();
     if (!schemaReady) return res.status(503).json({ status: "migrating", db: dbKind });
-    res.json({ status: "ok", db: dbKind });
+    // Что включено на этом сервере: клиент прячет кнопки, для которых нет ключа.
+    res.json({ status: "ok", db: dbKind, features: { draw: Boolean(process.env.GEMINI_API_KEY) } });
   } catch (error) {
     res.status(500).json({ status: "error", db: dbKind, message: error.message });
   }

@@ -20,3 +20,9 @@ services:
         fromDatabase:
           name: ai-workshop-db
           property: connectionString
+      # Рисование образов к словам. Значение вводится в Render Dashboard →
+      # Environment, в репозиторий не попадает. Без ключа кнопка скрыта.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APP_TZ
+        value: Asia/Jerusalem

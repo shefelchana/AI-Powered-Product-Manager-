@@ -58,9 +58,10 @@ function WordImage({ word }) {
 // Слово, которое не держится (три промаха и больше, картинки нет) — повод
 // нарисовать образ. Предложение, не автоматика: рисуем по нажатию.
 const SUGGEST_IMAGE_AFTER = 3;
+let drawAvailable = true;
 function ImageSuggestion({ word }) {
   const [state, setState] = useState("idle");
-  if (word.hasImage || (word.misses ?? 0) < SUGGEST_IMAGE_AFTER || state === "done") return null;
+  if (!drawAvailable || word.hasImage || (word.misses ?? 0) < SUGGEST_IMAGE_AFTER || state === "done") return null;
   async function draw() {
     setState("busy");
     try { await drawImage(word.id); setState("done"); } catch { setState("idle"); }
@@ -896,7 +897,7 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
 
 // ---------- список слов: правка, справка, удаление ----------
 
-function WordRow({ word, open, onToggle, onChanged }) {
+function WordRow({ word, open, onToggle, onChanged, canDraw = true }) {
   const [draft, setDraft] = useState(word);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -962,9 +963,13 @@ function WordRow({ word, open, onToggle, onChanged }) {
       <WordImage word={word} />
       {/* Один способ: приложение рисует образ по переводу. Поиск и ручной адрес
           ушли — три кнопки на одно действие делали картинку слишком дорогой. */}
-      <button className="secondary" disabled={busy || !(word.translation || word.definition)} onClick={() => run(() => drawImage(word.id))}>
-        {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
-      </button>
+      {canDraw ? (
+        <button className="secondary" disabled={busy || !(word.translation || word.definition)} onClick={() => run(() => drawImage(word.id))}>
+          {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
+        </button>
+      ) : (
+        <p className="muted">Рисование выключено: на сервере не задан ключ GEMINI_API_KEY.</p>
+      )}
 
       <div className="row-actions">
         <button
@@ -1004,7 +1009,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
   );
 }
 
-function WordsScreen({ words, onChanged, stats }) {
+function WordsScreen({ words, onChanged, stats, canDraw = true }) {
   const [openId, setOpenId] = useState(null);
 
   if (words.length === 0) {
@@ -1034,7 +1039,7 @@ function WordsScreen({ words, onChanged, stats }) {
           word={word}
           open={openId === word.id}
           onToggle={() => setOpenId(openId === word.id ? null : word.id)}
-          onChanged={onChanged}
+          onChanged={onChanged} canDraw={canDraw}
         />
       ))}
     </div>
@@ -1047,6 +1052,7 @@ function WordsScreen({ words, onChanged, stats }) {
 export default function App() {
   const [words, setWords] = useState([]);
   const [db, setDb] = useState("");
+  const [features, setFeatures] = useState({ draw: true });
   const [view, setView] = useState("add");
   const [showHelp, setShowHelp] = useState(false);
   const [lang, setLang] = useState("he");
@@ -1074,7 +1080,7 @@ export default function App() {
   useEffect(() => {
     fetch("/api/health")
       .then((res) => res.json())
-      .then((data) => setDb(data.db))
+      .then((data) => { setDb(data.db); drawAvailable = Boolean(data.features?.draw); setFeatures({ draw: drawAvailable }); })
       .catch(() => setDb(""));
   }, []);
 
@@ -1169,7 +1175,7 @@ export default function App() {
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, learned, phrases, pending }} />}
+      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, learned, phrases, pending }} canDraw={features.draw} />}
       {view === "review" && mode === "learn" && (
         <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}
