@@ -1,6 +1,6 @@
 // Примеры живут в своей таблице с происхождением; наружу слово по-прежнему
 // отдаёт examples строкой (фронтенд и recall.js это читают), плюс exampleList.
-import "./test-env.js";
+import "./env-for-tests.js";
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { sequelize } from "./db.js";

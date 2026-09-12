@@ -5,7 +5,7 @@
 import { DataTypes } from "sequelize";
 
 export const WORD_COLUMNS = {
-  term: { type: DataTypes.STRING(200), allowNull: false },
+  term: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
   definition: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   definitionSource: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
   sourceLabel: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
@@ -21,7 +21,8 @@ export const WORD_COLUMNS = {
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
-  nextDue: { type: DataTypes.DATEONLY, allowNull: false },
+  // Дефолт нужен только на пути «добавить недостающую колонку» в живую базу.
+  nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: "2026-01-01" },
 };
 
 const STAMPS = {

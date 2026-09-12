@@ -107,3 +107,31 @@ test("0003: у урока появляется finishedAt, у слова — ф�
   const [rows] = await db.query("SELECT question FROM Words");
   assert.ok(rows.every((r) => Number(r.question) === 0), "старые слова должны быть без флажка");
 });
+
+test("0004: у слова появляется lessonNote — значение словами преподавателя", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const words = await db.getQueryInterface().describeTable("Words");
+  assert.ok(words.lessonNote, "нет Words.lessonNote");
+  const [rows] = await db.query("SELECT lessonNote FROM Words");
+  assert.ok(rows.every((r) => r.lessonNote === ""), "по умолчанию пусто");
+});
+
+// Журнал миграций пишется после транзакции миграции: обрыв между ними
+// оставляет применённую, но незаписанную миграцию. Повторный старт обязан пройти.
+test("миграция применена, но не записана в журнал — повторный запуск проходит, не падает", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  await db.query("DELETE FROM SchemaMigrations WHERE name IN ('0002-lessons-and-examples.js', '0003-lesson-state-and-question.js', '0004-lesson-note.js')");
+  await migrate(db);
+  assert.deepEqual(await pendingMigrations(db), []);
+  const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM Examples");
+  assert.equal(Number(n), 2, "перенос примеров не повторяется");
+});
+
+test("база, где sync уже добавил lessonId, мигрирует без ошибки", async () => {
+  const db = await legacyDatabase();
+  await db.getQueryInterface().addColumn("Words", "lessonId", { type: DataTypes.INTEGER, allowNull: true });
+  await migrate(db);
+  assert.deepEqual(await pendingMigrations(db), []);
+});

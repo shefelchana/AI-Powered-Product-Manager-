@@ -34,8 +34,30 @@ export function makeMigrator(sequelize) {
   });
 }
 
+// На Postgres два контейнера могут стартовать одновременно (перекрывающийся
+// деплой). Advisory lock держит второго, пока первый не доедет; миграции
+// идемпотентны, так что второй просто увидит «нечего делать».
+// На SQLite соединение одно, замок не нужен и невозможен.
+const LOCK_KEY = 20260912;
+
 export async function migrate(sequelize) {
-  return makeMigrator(sequelize).up();
+  if (sequelize.getDialect() !== "postgres") return makeMigrator(sequelize).up();
+  return sequelize.transaction(async (transaction) => {
+    await sequelize.query(`SELECT pg_advisory_xact_lock(${LOCK_KEY})`, { transaction });
+    return makeMigrator(sequelize).up();
+  });
+}
+
+// Помощники для идемпотентных миграций: журнал пишется после транзакции
+// миграции, и обрыв между ними оставил бы применённую, но незаписанную
+// миграцию. Повторный запуск должен пройти, а не упасть на «колонка уже есть».
+export async function hasTable(qi, table, transaction) {
+  return (await qi.showAllTables({ transaction })).includes(table);
+}
+
+export async function hasColumn(qi, table, column, transaction) {
+  const shape = await qi.describeTable(table, { transaction });
+  return Boolean(shape[column]);
 }
 
 export async function pendingMigrations(sequelize) {

@@ -1,6 +1,6 @@
 // Урок на входе: «Начать урок» открывает урок, всё добавленное до
 // «Закончить урок» привязано к нему. Второй «Начать» не плодит уроков.
-import "./test-env.js";
+import "./env-for-tests.js";
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { sequelize } from "./db.js";

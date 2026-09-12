@@ -2,6 +2,7 @@
 // Старая колонка Words.examples остаётся нетронутой: её никто больше не читает
 // и не пишет, но откат должен быть возможен. Уберёт отдельная миграция позже.
 import { DataTypes } from "sequelize";
+import { hasTable, hasColumn } from "../migrate.js";
 
 const STAMPS = {
   createdAt: { type: DataTypes.DATE, allowNull: false },
@@ -9,7 +10,7 @@ const STAMPS = {
 };
 
 export async function up({ context: qi, transaction }) {
-  await qi.createTable("Lessons", {
+  if (!(await hasTable(qi, "Lessons", transaction))) await qi.createTable("Lessons", {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     date: { type: DataTypes.DATEONLY, allowNull: false },
     title: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
@@ -19,14 +20,15 @@ export async function up({ context: qi, transaction }) {
     ...STAMPS,
   }, { transaction });
 
-  await qi.addColumn("Words", "lessonId", {
+  if (!(await hasColumn(qi, "Words", "lessonId", transaction))) await qi.addColumn("Words", "lessonId", {
     type: DataTypes.INTEGER,
     allowNull: true,
     references: { model: "Lessons", key: "id" },
     onDelete: "SET NULL",
   }, { transaction });
 
-  await qi.createTable("Examples", {
+  const hadExamples = await hasTable(qi, "Examples", transaction);
+  if (!hadExamples) await qi.createTable("Examples", {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     wordId: {
       type: DataTypes.INTEGER,
@@ -47,7 +49,9 @@ export async function up({ context: qi, transaction }) {
     ...STAMPS,
   }, { transaction });
 
-  // Перенос: каждая непустая строка старого поля — своя фраза.
+  // Перенос: каждая непустая строка старого поля — своя фраза. Только при
+  // первом проходе: если таблица уже была, перенос уже случился.
+  if (hadExamples) return;
   const [rows] = await qi.sequelize.query('SELECT "id", "examples" FROM "Words"', { transaction });
   const now = new Date();
   const inserts = [];
@@ -61,6 +65,16 @@ export async function up({ context: qi, transaction }) {
 }
 
 export async function down({ context: qi, transaction }) {
+  // Откат переливает фразы обратно в текстовую колонку, иначе всё, что
+  // добавили после миграции, пропало бы.
+  const [rows] = await qi.sequelize.query('SELECT "wordId", "text" FROM "Examples" ORDER BY "id"', { transaction });
+  const byWord = new Map();
+  for (const row of rows) byWord.set(row.wordId, [...(byWord.get(row.wordId) ?? []), row.text]);
+  for (const [wordId, texts] of byWord) {
+    await qi.sequelize.query('UPDATE "Words" SET "examples" = :examples WHERE "id" = :id', {
+      replacements: { examples: texts.join("\n"), id: wordId }, transaction,
+    });
+  }
   await qi.dropTable("Examples", { transaction });
   await qi.removeColumn("Words", "lessonId", { transaction });
   await qi.dropTable("Lessons", { transaction });

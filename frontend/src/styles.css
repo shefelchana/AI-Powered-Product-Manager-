@@ -442,17 +442,6 @@ button {
 
 /* ---------- выбор записи в Академии ---------- */
 
-.choices {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.choices button {
-  margin: 0;
-  font-size: 1.15rem;
-}
 
 /* ---------- картинка и режим на слух ---------- */
 
@@ -546,3 +535,8 @@ button {
   display: block;
   margin: 0.75rem 0;
 }
+
+.lesson-import li { margin-bottom: 0.6rem; }
+.cand-term { font-size: 1.15rem; font-weight: 600; margin-left: 0.4rem; }
+.cand-meaning { margin: 0.1rem 0 0 1.6rem; }
+.cand-example { margin: 0.1rem 0 0 1.6rem; opacity: 0.8; }

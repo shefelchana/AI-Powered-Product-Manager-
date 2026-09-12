@@ -7,6 +7,7 @@ import { Word, Example, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from
 import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
 import { startLesson, currentLesson, finishLesson } from "./lessons.js";
+import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
 import { Lesson } from "./models.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
@@ -19,11 +20,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
 
 const app = express();
-app.use(express.json());
+// Разбор урока приходит одним JSON: 100 КБ по умолчанию ему может не хватить.
+app.use(express.json({ limit: "2mb" }));
+
+// Пока миграции не доехали, отвечаем 503: хостинг не должен пускать трафик
+// на схему, которая ещё меняется.
+let schemaReady = false;
 
 app.get("/api/health", async (req, res) => {
   try {
     await sequelize.authenticate();
+    if (!schemaReady) return res.status(503).json({ status: "migrating", db: dbKind });
     res.json({ status: "ok", db: dbKind });
   } catch (error) {
     res.status(500).json({ status: "error", db: dbKind, message: error.message });
@@ -135,6 +142,26 @@ app.patch("/api/lessons/:id/finish", async (req, res) => {
   }
 });
 
+// Импорт разбора урока (JSON из конвейера расшифровки). Первый маршрут —
+// только кандидаты, ничего не пишет; второй — запись отмеченного.
+app.post("/api/import/lesson", async (req, res) => {
+  let doc;
+  try {
+    doc = parseLessonJson(req.body?.json ?? req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  res.json({ lesson: doc.lesson, candidates: await lessonCandidates(doc) });
+});
+
+app.post("/api/import/lesson/apply", async (req, res) => {
+  try {
+    res.status(201).json(await applyLessonImport(req.body?.lesson, req.body?.picks));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Filling in a definition later, at home, when there is attention for it.
 app.patch("/api/words/:id", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
@@ -198,7 +225,7 @@ app.patch("/api/words/:id/review", async (req, res) => {
 app.get("/api/word-of-day", async (req, res) => {
   const lang = langOf(req);
   const picked = await Word.findOne({ where: { dayPickedAt: today(), lang } });
-  if (picked) return res.json(picked);
+  if (picked) return res.json(withoutImageBytes(picked));
 
   const candidates = await Word.findAll({
     where: { box: { [Op.lte]: 2 }, lang },
@@ -529,11 +556,11 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-// Порт занимаем ДО работы с базой: он служит замком от вторых экземпляров.
-// Скопившиеся «node --watch» однажды перезапустились разом, наперегонки
-// выполнили sync({ alter: true }) — а это перестройка таблицы с перекладкой
-// строк — и стёрли данные друг у друга. Проигравший гонку за порт падает
-// здесь с EADDRINUSE, не успев открыть базу.
+// Порт занимаем ДО работы с базой: локально он служит замком от вторых
+// экземпляров («node --watch» однажды перезапустились разом и стёрли данные
+// друг у друга). На хостинге у каждого контейнера свой порт, поэтому там
+// замок — advisory lock в migrate.js, а /api/health отвечает 503, пока
+// схема не доехала.
 const server = app.listen(PORT);
 await new Promise((resolve, reject) => {
   server.once("listening", resolve);
@@ -546,6 +573,7 @@ backupDatabase();
 
 // Схема доезжает миграциями (backend/migrations), не sync: см. migrate.js.
 await migrate(sequelize);
+schemaReady = true;
 
 // Слова, заведённые до появления языков, метим по написанию.
 for (const word of await Word.findAll()) {

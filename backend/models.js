@@ -69,6 +69,8 @@ export const Word = sequelize.define("Word", {
   lessonId: { type: DataTypes.INTEGER, allowNull: true },
   // «?» — не поняла на уроке, спросить. Снимается руками.
   question: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  // Значение словами преподавателя. Словарное значение оно не заменяет.
+  lessonNote: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
@@ -105,4 +107,8 @@ Example.belongsTo(Lesson, { foreignKey: "lessonId" });
 
 // Примеры едут вместе со словом везде: так ни один маршрут не забудет их
 // подгрузить, а фронтенд получает examples строкой, как и раньше.
-Word.addScope("defaultScope", { include: [{ model: Example, as: "exampleRows" }] }, { override: true });
+// separate: примеры отдельным запросом, а не JOIN. JOIN размножал бы байты
+// картинки на число фраз и ломал Word.count().
+Word.addScope("defaultScope", {
+  include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]] }],
+}, { override: true });

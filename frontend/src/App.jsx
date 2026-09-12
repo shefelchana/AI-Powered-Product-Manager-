@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, startLesson, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, startLesson, listWords, previewImport, previewLesson, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
 
@@ -383,6 +383,7 @@ function AddScreen({ onAdded }) {
     </form>
 
     <ImportBlock onAdded={onAdded} />
+    <LessonImportBlock onAdded={onAdded} />
     </>
   );
 }
@@ -485,6 +486,106 @@ function ImportBlock({ onAdded }) {
           </ul>
           <button className="primary" type="button" onClick={addPicked} disabled={busy || picked.size === 0}>
             {busy ? "Записываю…" : `Добавить выбранные (${picked.size})`}
+          </button>
+        </>
+      )}
+
+      {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
+    </details>
+  );
+}
+
+// ---------- импорт разбора урока ----------
+
+// Разбор урока приходит JSON-файлом из конвейера расшифровки (или конспектом
+// преподавателя, прогнанным через тот же промпт). Здесь — тройки
+// «слово · значение · фраза» с галочками. Сервер ничего не пишет, пока не
+// нажата «Записать»: что попадёт в колоду, решает человек.
+function LessonImportBlock({ onAdded }) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [picked, setPicked] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  async function find() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = await previewLesson(text);
+      setPreview(result);
+      // Отмечено то, что даст новое: новые слова и фразы к знакомым.
+      setPicked(new Set(result.candidates.filter((c) => !c.exists || (c.example && !c.hasExample)).map((c) => c.term)));
+      if (result.candidates.length === 0) setStatus({ kind: "error", text: "В разборе не нашлось ни одного слова" });
+    } catch (error) {
+      setStatus({ kind: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle(term) {
+    const next = new Set(picked);
+    if (next.has(term)) next.delete(term);
+    else next.add(term);
+    setPicked(next);
+  }
+
+  async function write() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const picks = preview.candidates.filter((c) => picked.has(c.term));
+      const result = await applyLesson(preview.lesson, picks);
+      setStatus({ kind: "ok", text: `Урок ${formatLessonDate(preview.lesson.date)}: новых слов ${result.added}, дополнено ${result.updated}` });
+      setText("");
+      setPreview(null);
+      setPicked(new Set());
+      onAdded();
+    } catch (error) {
+      setStatus({ kind: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const kindLabel = { word: "", correction: "исправление", phrase: "фраза" };
+
+  return (
+    <details className="extra">
+      <summary>Импорт из разбора урока</summary>
+      <label className="field-label" htmlFor="lesson-json">Вставь JSON разбора урока</label>
+      <textarea
+        id="lesson-json"
+        dir="ltr"
+        rows={4}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder='{"lesson": {...}, "items": [...]}'
+      />
+      <button className="quiet" type="button" onClick={find} disabled={busy || !text.trim()}>
+        {busy && preview === null ? "Разбираю…" : "Показать кандидатов"}
+      </button>
+
+      {preview?.candidates.length > 0 && (
+        <>
+          <p className="muted">Урок {formatLessonDate(preview.lesson.date)}{preview.lesson.title ? ` · ${preview.lesson.title}` : ""} · кандидатов: {preview.candidates.length}</p>
+          <ul className="import-list lesson-import">
+            {preview.candidates.map((c) => (
+              <li key={c.term}>
+                <label>
+                  <input type="checkbox" disabled={busy} checked={picked.has(c.term)} onChange={() => toggle(c.term)} />
+                  <span className="cand-term" dir="rtl">{c.term}</span>
+                  {c.exists && <span className="muted"> · уже в колоде{c.hasDefinition ? "" : ", без значения"}</span>}
+                  {kindLabel[c.kind] && <span className="muted"> · {kindLabel[c.kind]}</span>}
+                </label>
+                {c.meaning && <div className="cand-meaning">{c.meaning}</div>}
+                {c.example && <div className="cand-example" dir="rtl">{c.example}{c.hasExample ? " (уже есть)" : ""}</div>}
+              </li>
+            ))}
+          </ul>
+          <button className="primary" type="button" onClick={write} disabled={busy || picked.size === 0}>
+            {busy ? "Записываю…" : `Записать выбранное (${picked.size})`}
           </button>
         </>
       )}
