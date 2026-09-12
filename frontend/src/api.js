@@ -34,8 +34,8 @@ export const listWords = () => request("/api/words");
 export const dueWords = (limit, lang) => request(`/api/words/due?limit=${limit}&lang=${lang}`);
 export const addWord = (word) => request("/api/words", json("POST", word));
 export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH", patch));
-export const reviewWord = (id, known) =>
-  request(`/api/words/${id}/review`, json("PATCH", { known }));
+export const reviewWord = (id, known, mode = "") =>
+  request(`/api/words/${id}/review`, json("PATCH", { known, mode }));
 export const saveImage = (id, url) =>
   request(`/api/words/${id}/image`, json("POST", { url }));
 export const drawImage = (id) =>
@@ -56,3 +56,4 @@ export const listLessons = () => request("/api/lessons");
 export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${lang}`, json("POST", {}));
 export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
 export const recordAttempt = (wordId, formId, ok, sentenceId = null) => request("/api/practice/attempts", json("POST", { wordId, formId, ok, sentenceId }));
+export const progress = (lang) => request(`/api/progress?lang=${lang}`);

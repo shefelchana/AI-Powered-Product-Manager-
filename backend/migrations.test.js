@@ -160,3 +160,9 @@ test("0007: у слова есть счётчик промахов misses, по 
   const [rows] = await db.query("SELECT misses FROM Words");
   assert.ok(rows.every((r) => Number(r.misses) === 0));
 });
+
+test("0008: таблица ReviewAttempts", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  assert.ok((await db.getQueryInterface().showAllTables()).includes("ReviewAttempts"));
+});

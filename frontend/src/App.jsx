@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
@@ -10,8 +10,9 @@ const todayISO = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month
 const isDue = (word) => word.nextDue <= todayISO();
 const dirOf = (lang) => (lang === "he" ? "rtl" : "ltr");
 // Стадия словами, не «коробка 3»: номер коробки — внутренняя механика.
-const STAGES = { 1: "новое", 2: "через день", 3: "через 3 дня", 4: "через неделю", 5: "выучено" };
-const stageOf = (word) => STAGES[word.box] ?? "новое";
+const STAGES = { 1: "новое", 2: "через день", 3: "через 3 дня", 4: "через неделю", 5: "закрепляется" };
+// «Выучено» — только если слово вспомнилось и после 16-дневной паузы (список из /api/progress).
+const stageOf = (word, learnedIds = []) => (learnedIds.includes(word.id) ? "выучено" : STAGES[word.box] ?? "новое");
 const LANGS = { he: "עברית", en: "English", ru: "Русский" };
 
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
@@ -537,8 +538,8 @@ function LearnScreen({ queue, pool, onFinished }) {
     (async () => {
       const { known, unknown } = roundSummary(round);
       try {
-        for (const id of known) await reviewWord(id, true);
-        for (const id of unknown) await reviewWord(id, false);
+        for (const id of known) await reviewWord(id, true, "learn");
+        for (const id of unknown) await reviewWord(id, false, "learn");
       } catch (e) {
         setError(e.message);
       } finally {
@@ -849,7 +850,7 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
     setError(null);
     try {
       // Повторение к уроку коробки не трогает: это прогон, а не расписание.
-      if (!practice) await reviewWord(word.id, known);
+      if (!practice) await reviewWord(word.id, known, listen ? "listen" : mode);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -897,7 +898,7 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
 
 // ---------- список слов: правка, справка, удаление ----------
 
-function WordRow({ word, open, onToggle, onChanged, canDraw = true }) {
+function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds = [] }) {
   const [draft, setDraft] = useState(word);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -927,7 +928,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true }) {
         <span className="word-row-term" dir={dirOf(word.lang)}>{word.term}</span>
         <span className="word-row-side">
           <span className="word-row-tr" dir="ltr">{word.translation || <em className="muted">без перевода</em>}</span>
-          <span className="muted word-row-stage">{stageOf(word)}</span>
+          <span className="muted word-row-stage">{stageOf(word, learnedIds)}</span>
         </span>
       </button>
     );
@@ -1009,19 +1010,64 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true }) {
   );
 }
 
-function WordsScreen({ words, onChanged, stats, canDraw = true }) {
+// Прогресс без стриков: куда движется колода, что держится через неделю,
+// что не держится, по урокам, в какие дни повторяла.
+const STAGE_ORDER = [["new", "новое"], ["day1", "через день"], ["day3", "через 3 дня"], ["week", "через неделю"], ["settling", "закрепляется"], ["learned", "выучено"]];
+function ProgressBlock({ report, stats }) {
+  if (!report) return null;
+  const total = Object.values(report.stages).reduce((a, b) => a + b, 0) || 1;
+  const pct = (n) => Math.round((n / total) * 100);
+  const ret = report.retention;
+  return (
+    <details className="progress-block" open>
+      <summary>Прогресс</summary>
+      <div className="stage-bar" aria-hidden="true">
+        {STAGE_ORDER.map(([k]) => report.stages[k] > 0 && <span key={k} className={`stage-seg stage-${k}`} style={{ width: `${pct(report.stages[k])}%` }} />)}
+      </div>
+      <p className="muted stage-legend">
+        {STAGE_ORDER.filter(([k]) => report.stages[k] > 0).map(([k, name]) => `${name} ${report.stages[k]}`).join(" · ")}
+      </p>
+      <p className="muted">
+        К повторению: <strong>{stats.dueCount}</strong> · своих фраз: <strong>{stats.phrases}</strong>
+        {stats.pending > 0 && <> · без перевода: <strong>{stats.pending}</strong></>}
+      </p>
+      <p>
+        Удержание через неделю и дольше:{" "}
+        {ret.asked === 0 ? <span className="muted">ещё нечего мерить — ни одно слово не возвращалось после недели</span> : <strong>{Math.round((ret.correct / ret.asked) * 100)}%</strong>}
+        {ret.asked > 0 && <span className="muted"> ({ret.correct} из {ret.asked})</span>}
+      </p>
+      <p className="activity" aria-label="дни с повторением за две недели">
+        {report.activeDays.map((d) => <span key={d.date} className={d.active ? "dot on" : "dot"} title={d.date} />)}
+        <span className="muted"> дни с повторением, две недели</span>
+      </p>
+      {report.hard.length > 0 && (
+        <p className="muted hard-words">Не держится:{" "}
+          {report.hard.map((h) => <span key={h.id} className="chip"><bdi dir="rtl">{h.term}</bdi> <small>{h.misses}</small></span>)}
+        </p>
+      )}
+      {report.lessons.length > 0 && (
+        <p className="muted">По урокам: {report.lessons.slice(0, 4).map((l) => `${l.title.replace(/ · Hebreway$/, "") || l.date}: держится ${l.holding} из ${l.total}${l.learned ? `, выучено ${l.learned}` : ""}`).join(" · ")}</p>
+      )}
+      {report.forms.length > 0 && (
+        <p className="muted">Формы: {report.forms.slice(0, 6).map((f) => `${f.label} ${f.correct}/${f.asked}`).join(" · ")}</p>
+      )}
+    </details>
+  );
+}
+
+function WordsScreen({ words, onChanged, stats, canDraw = true, lang = "he" }) {
   const [openId, setOpenId] = useState(null);
+  const [report, setReport] = useState(null);
+
+  useEffect(() => {
+    progress(lang).then(setReport).catch(() => setReport(null));
+  }, [lang, words]);
 
   if (words.length === 0) {
     return <p className="muted">Слов пока нет. Начни с вкладки «Добавить».</p>;
   }
 
-  const counters = stats && (
-    <p className="counters">
-      К повторению: <strong>{stats.dueCount}</strong> · выучено: <strong>{stats.learned}</strong> · своих фраз: <strong>{stats.phrases}</strong>
-      {stats.pending > 0 && <> · без перевода: <strong>{stats.pending}</strong></>}
-    </p>
-  );
+  const counters = <ProgressBlock report={report} stats={stats} />;
 
   // Сначала то, у чего нет перевода: это и есть список дел. Потом новые.
   const sorted = [...words].sort((a, b) => {
@@ -1039,7 +1085,7 @@ function WordsScreen({ words, onChanged, stats, canDraw = true }) {
           word={word}
           open={openId === word.id}
           onToggle={() => setOpenId(openId === word.id ? null : word.id)}
-          onChanged={onChanged} canDraw={canDraw}
+          onChanged={onChanged} canDraw={canDraw} learnedIds={report?.learnedIds ?? []}
         />
       ))}
     </div>
@@ -1175,7 +1221,7 @@ export default function App() {
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, learned, phrases, pending }} canDraw={features.draw} />}
+      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, phrases, pending }} canDraw={features.draw} lang={lang} />}
       {view === "review" && mode === "learn" && (
         <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}

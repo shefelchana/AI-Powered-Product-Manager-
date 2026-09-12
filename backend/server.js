@@ -8,7 +8,8 @@ import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
 import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lessons.js";
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
-import { Lesson, PracticeAttempt, Sentence } from "./models.js";
+import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
+import { progressReport } from "./progress.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -221,6 +222,9 @@ app.patch("/api/words/:id", async (req, res) => {
   res.json(withoutImageBytes(word));
 });
 
+// Откуда пришёл ответ: режим повторения. Чужие значения не пишем.
+const REVIEW_MODES = new Set(["type", "choose", "learn", "listen", "reveal"]);
+
 app.patch("/api/words/:id/review", async (req, res) => {
   if (typeof req.body?.known !== "boolean") {
     return res.status(400).json({ error: "Нужно поле known: true или false" });
@@ -228,8 +232,11 @@ app.patch("/api/words/:id/review", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
+  const boxBefore = word.box;
   Object.assign(word, recordReview(word, req.body.known));
   await word.save();
+  const mode = REVIEW_MODES.has(req.body?.mode) ? req.body.mode : "";
+  await ReviewAttempt.create({ wordId: word.id, known: req.body.known, mode, boxBefore, boxAfter: word.box });
   res.json(withoutImageBytes(word));
 });
 
@@ -476,6 +483,17 @@ app.post("/api/words/:id/pealim", async (req, res) => {
 // (не больше пяти за раз: Pealim чужой и небольшой, ходим редко); сам набор
 // упражнений собирается из того, что уже сохранено, без сети.
 const looksLikeVerb = (word) => word.lang === "he" && /^ל[א-ת]{3,}$/.test(word.term) && !word.forms;
+
+// Прогресс: стадии колоды, удержание, что не держится, по урокам, активность.
+app.get("/api/progress", async (req, res) => {
+  const lang = langOf(req);
+  const words = await Word.findAll({ where: { lang } });
+  const ids = words.map((w) => w.id);
+  const attempts = ids.length ? await ReviewAttempt.findAll({ where: { wordId: { [Op.in]: ids } }, order: [["id", "ASC"]] }) : [];
+  const practice = ids.length ? await PracticeAttempt.findAll({ where: { wordId: { [Op.in]: ids } } }) : [];
+  const lessons = await Lesson.findAll({ order: [["date", "DESC"], ["id", "DESC"]] });
+  res.json(progressReport(words.map((w) => w.toJSON()), attempts.map((a) => a.toJSON()), lessons.map((l) => l.toJSON()), practice.map((p) => p.toJSON())));
+});
 
 app.post("/api/practice/prepare", async (req, res) => {
   const lang = langOf(req);
