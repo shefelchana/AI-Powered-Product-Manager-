@@ -253,6 +253,7 @@ function DayScreen({ lang, onChanged }) {
       </p>
       <p className="muted">Прочитай вслух — так запоминается лучше</p>
 
+      {word.translation && <p className="translation" dir="ltr">{word.translation}</p>}
       {word.definition && <p className="definition" dir="rtl">{word.definition}</p>}
       <SourceNote word={word} />
       <RootLine word={word} />
