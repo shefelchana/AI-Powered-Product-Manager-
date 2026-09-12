@@ -10,6 +10,7 @@ import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lesson
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
 import { Lesson, PracticeAttempt, Sentence } from "./models.js";
 import { buildExercises } from "./practice.js";
+import { answer } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -74,7 +75,10 @@ app.get("/api/words/due", async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || SESSION_LIMIT, SESSION_LIMIT);
   const words = await Word.findAll({
     where: { nextDue: { [Op.lte]: today() }, lang: langOf(req) },
-    order: [["box", "ASC"], ["createdAt", "ASC"]],
+    // Сначала самое просроченное: слово из высокой коробки, у которого срок
+    // прошёл, забывается прямо сейчас, а новые в первой коробке никуда не денутся.
+    // Раньше очередь шла по коробкам, и за горой новых слов старые не показывались.
+    order: [["nextDue", "ASC"], ["box", "ASC"], ["createdAt", "ASC"]],
     limit,
   });
   res.json(words.map(withoutImageBytes));
@@ -223,8 +227,7 @@ app.patch("/api/words/:id/review", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
-  word.box = req.body.known ? Math.min(word.box + 1, LAST_BOX) : 1;
-  word.nextDue = dayOffset(INTERVALS[word.box]);
+  Object.assign(word, answer(word, req.body.known));
   await word.save();
   res.json(withoutImageBytes(word));
 });

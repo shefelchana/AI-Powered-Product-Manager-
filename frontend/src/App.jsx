@@ -4,7 +4,8 @@ import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
+const todayISO = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const isDue = (word) => word.nextDue <= todayISO();
 const dirOf = (lang) => (lang === "he" ? "rtl" : "ltr");
 const LANGS = { he: "עברית", en: "English", ru: "Русский" };
@@ -687,7 +688,7 @@ function RevealCard({ word, onAnswer, listen }) {
   );
 }
 
-function ReviewScreen({ queue, onFinished, listen, practice = false }) {
+function ReviewScreen({ queue, onFinished, onMore, listen, practice = false }) {
   const [cards, setCards] = useState(queue);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -698,6 +699,8 @@ function ReviewScreen({ queue, onFinished, listen, practice = false }) {
       <div className="done">
         <p className="done-title">{practice ? "Урок повторён" : "На сегодня хватит"}</p>
         <p className="muted">Повторено слов: {queue.length}</p>
+        {/* Продолжить — выбор после финиша, а не бесконечная лента: «ещё» никогда не по умолчанию. */}
+        {!practice && onMore && <button className="secondary" onClick={onMore}>Ещё 10</button>}
         <button className="primary" onClick={onFinished}>Вернуться</button>
       </div>
     );
@@ -972,7 +975,10 @@ export default function App() {
 
   async function startReview(limit, byEar = false) {
     try {
-      setQueue(await dueWords(limit, lang));
+      const next = await dueWords(limit, lang);
+      await reload();
+      if (next.length === 0) { setView("reviewmenu"); return; }
+      setQueue(next);
       setListen(byEar);
       setPractice(false);
       setView("review");
@@ -1055,6 +1061,7 @@ export default function App() {
           listen={listen}
           practice={practice}
           onFinished={() => { setView("reviewmenu"); reload(); }}
+          onMore={() => startReview(10, listen)}
         />
       )}
     </main>

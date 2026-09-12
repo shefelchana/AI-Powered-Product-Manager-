@@ -572,3 +572,5 @@ button {
 .review-menu-row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .review-menu-row .secondary { flex: 1 1 auto; }
 .sentence-input { min-height: 5.5rem; resize: vertical; font-size: 1.3rem; line-height: 1.5; }
+
+.done .secondary { margin-right: 0.6rem; }
