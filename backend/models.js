@@ -7,16 +7,12 @@ import { sequelize } from "./db.js";
 // Box 1 is "just met it", box 5 is "learned". Days until the next review.
 // Box 1 repeats the same day: the forgetting curve is steepest in the first
 // 24 hours, so the first repetition has to land before the day is out.
-export const INTERVALS = { 1: 0, 2: 1, 3: 3, 4: 7, 5: 16 };
-export const LAST_BOX = 5;
+// Само расписание — в schedule.js (чистые функции, тесты). Здесь только реэкспорт.
+import { INTERVALS, LAST_BOX, dayOffsetFrom, localToday } from "./schedule.js";
+export { INTERVALS, LAST_BOX };
 
-export function dayOffset(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-export const today = () => dayOffset(0);
+export const dayOffset = (days) => dayOffsetFrom(new Date(), days);
+export const today = () => localToday();
 
 // Язык определяем по письменности: выбирать его руками — лишнее решение
 // на каждое слово, а буквы говорят сами за себя.
