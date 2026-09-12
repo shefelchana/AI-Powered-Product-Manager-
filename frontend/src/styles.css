@@ -594,3 +594,7 @@ button {
 
 .progress { height: 6px; background: #1d2026; border-radius: 3px; margin: 0.25rem 0 1rem; overflow: hidden; }
 .progress-fill { height: 100%; background: #6ea8ff; transition: width 0.3s; }
+
+.word-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; min-width: 0; }
+.word-row-tr { font-size: 0.95rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.word-row-stage { font-size: 0.8rem; }

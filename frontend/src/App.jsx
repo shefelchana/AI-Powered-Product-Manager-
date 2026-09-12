@@ -9,6 +9,9 @@ import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 const todayISO = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const isDue = (word) => word.nextDue <= todayISO();
 const dirOf = (lang) => (lang === "he" ? "rtl" : "ltr");
+// Стадия словами, не «коробка 3»: номер коробки — внутренняя механика.
+const STAGES = { 1: "новое", 2: "через день", 3: "через 3 дня", 4: "через неделю", 5: "выучено" };
+const stageOf = (word) => STAGES[word.box] ?? "новое";
 const LANGS = { he: "עברית", en: "English", ru: "Русский" };
 
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
@@ -901,8 +904,9 @@ function WordRow({ word, open, onToggle, onChanged }) {
     return (
       <button className="word-row" onClick={onToggle}>
         <span className="word-row-term" dir={dirOf(word.lang)}>{word.term}</span>
-        <span className="muted">
-          {word.definition ? `коробка ${word.box}` : "без объяснения"}
+        <span className="word-row-side">
+          <span className="word-row-tr" dir="ltr">{word.translation || <em className="muted">без перевода</em>}</span>
+          <span className="muted word-row-stage">{stageOf(word)}</span>
         </span>
       </button>
     );
@@ -1018,14 +1022,14 @@ function WordsScreen({ words, onChanged, stats }) {
   const counters = stats && (
     <p className="counters">
       К повторению: <strong>{stats.dueCount}</strong> · выучено: <strong>{stats.learned}</strong> · своих фраз: <strong>{stats.phrases}</strong>
-      {stats.pending > 0 && <> · без объяснения: <strong>{stats.pending}</strong></>}
+      {stats.pending > 0 && <> · без перевода: <strong>{stats.pending}</strong></>}
     </p>
   );
 
-  // Сначала то, у чего нет объяснения: это и есть список дел.
+  // Сначала то, у чего нет перевода: это и есть список дел. Потом новые.
   const sorted = [...words].sort((a, b) => {
-    const byDefinition = Number(Boolean(a.definition)) - Number(Boolean(b.definition));
-    return byDefinition !== 0 ? byDefinition : b.id - a.id;
+    const byTranslation = Number(Boolean(a.translation)) - Number(Boolean(b.translation));
+    return byTranslation !== 0 ? byTranslation : b.id - a.id;
   });
 
   return (
@@ -1088,7 +1092,7 @@ export default function App() {
   const otherLangs = Object.keys(LANGS).filter((code) => code !== lang && counts[code]);
 
   const dueCount = mine.filter(isDue).length;
-  const pending = mine.filter((word) => !word.definition).length;
+  const pending = mine.filter((word) => !word.translation).length;
   const learned = mine.filter((word) => word.box === 5).length;
   const phrases = mine.reduce((sum, word) => sum + exampleList(word).length, 0);
 
