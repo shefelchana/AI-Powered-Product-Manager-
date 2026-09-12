@@ -124,5 +124,16 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
     .map((ex) => ({ ex, key: rng() }))
     .sort((a, b) => Number(Boolean(b.ex.wrong)) - Number(Boolean(a.ex.wrong)) || Number(b.ex.recent) - Number(a.ex.recent) || a.key - b.key)
     .map((x) => x.ex);
-  return shuffled.slice(0, Math.max(0, limit));
+  // Предложений после одного урока десятки, форм — единицы: без квоты формы
+  // не попадались бы вовсе. Предложениям — не больше 60% подхода, остаток
+  // добирается тем, что есть.
+  const cap = Math.max(0, limit);
+  const sentencesFirst = shuffled.filter((e) => e.kind === "sentence");
+  const others = shuffled.filter((e) => e.kind !== "sentence");
+  const sentenceQuota = Math.min(sentencesFirst.length, Math.max(cap - others.length, Math.ceil(cap * 0.6)));
+  const chosen = [...sentencesFirst.slice(0, sentenceQuota), ...others.slice(0, cap - sentenceQuota)];
+  return chosen
+    .map((ex) => ({ ex, key: rng() }))
+    .sort((a, b) => Number(Boolean(b.ex.wrong)) - Number(Boolean(a.ex.wrong)) || a.key - b.key)
+    .map((x) => x.ex);
 }

@@ -66,3 +66,17 @@ test("вопрос никогда не на иврите: строка Акад�
   const leaky = { id: 5, term: "להקל על", translation: "", lessonNote: "", definition: "להקל — облегчить", definitionSource: "typed", forms: "" };
   assert.deepEqual(buildExercises([leaky], { limit: 3, rng: () => 0 }), []);
 });
+
+test("предложения не вытесняют формы: не больше 60% подхода, остальное — глаголы и предлоги", () => {
+  const sentences = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, he: "משפט " + i, ru: "фраза " + i, lessonId: 7, wrongCount: 0 }));
+  const list = buildExercises([verb, prep, { ...verb, id: 11 }, { ...prep, id: 12 }], { limit: 10, rng: () => 0.2, sentences });
+  assert.equal(list.length, 10);
+  assert.equal(list.filter((e) => e.kind === "sentence").length, 6);
+  assert.equal(list.filter((e) => e.kind !== "sentence").length, 4);
+});
+
+test("если слов мало, предложения добирают подход целиком", () => {
+  const sentences = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, he: "משפט " + i, ru: "фраза " + i, lessonId: 7, wrongCount: 0 }));
+  const list = buildExercises([verb], { limit: 10, rng: () => 0.2, sentences });
+  assert.equal(list.length, 10);
+});
