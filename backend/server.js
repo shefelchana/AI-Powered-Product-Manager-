@@ -6,7 +6,7 @@ import { backupDatabase, sequelize, dbKind } from "./db.js";
 import { Word, Example, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
-import { startLesson, currentLesson, finishLesson } from "./lessons.js";
+import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lessons.js";
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
 import { Lesson, PracticeAttempt, Sentence } from "./models.js";
 import { buildExercises } from "./practice.js";
@@ -133,6 +133,14 @@ app.get("/api/lessons/current", async (req, res) => {
 app.post("/api/lessons", async (req, res) => {
   const lesson = await startLesson({ date: req.body?.date, title: req.body?.title });
   res.status(201).json(lesson);
+});
+
+app.delete("/api/lessons/:id", async (req, res) => {
+  try {
+    res.json(await deleteLesson(req.params.id));
+  } catch (error) {
+    res.status(/не найден/.test(error.message) ? 404 : 409).json({ error: error.message });
+  }
 });
 
 app.patch("/api/lessons/:id/finish", async (req, res) => {
