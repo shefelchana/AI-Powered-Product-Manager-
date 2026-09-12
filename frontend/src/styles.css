@@ -598,3 +598,17 @@ button {
 .word-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; min-width: 0; }
 .word-row-tr { font-size: 0.95rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .word-row-stage { font-size: 0.8rem; }
+
+.progress-block { margin: 0.5rem 0 1rem; }
+.progress-block summary { cursor: pointer; font-weight: 600; margin-bottom: 0.5rem; }
+.stage-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #1d2026; gap: 2px; }
+.stage-seg { display: block; height: 100%; }
+.stage-new { background: #5a6270; } .stage-day1 { background: #4c7bd9; } .stage-day3 { background: #3f9d6d; }
+.stage-week { background: #2f8a5a; } .stage-settling { background: #d9a74f; } .stage-learned { background: #e6c15a; }
+.stage-legend { margin: 0.35rem 0 0.6rem; font-size: 0.9rem; }
+.hard-words { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.chip { display: inline-flex; gap: 0.3rem; align-items: baseline; padding: 0.1rem 0.5rem; border-radius: 999px; background: #262a33; }
+.chip small { opacity: 0.7; }
+.activity { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #2b2f37; display: inline-block; }
+.dot.on { background: #6ea8ff; }

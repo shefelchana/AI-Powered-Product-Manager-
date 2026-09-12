@@ -135,3 +135,13 @@ export const Sentence = sequelize.define("Sentence", {
 });
 Sentence.belongsTo(Lesson, { foreignKey: "lessonId" });
 Lesson.hasMany(Sentence, { foreignKey: "lessonId" });
+
+// Ответ на повторении: журнал для удержания и точности по неделям.
+export const ReviewAttempt = sequelize.define("ReviewAttempt", {
+  wordId: { type: DataTypes.INTEGER, allowNull: false },
+  known: { type: DataTypes.BOOLEAN, allowNull: false },
+  mode: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
+  boxBefore: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  boxAfter: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+});
+ReviewAttempt.belongsTo(Word, { foreignKey: "wordId" });
