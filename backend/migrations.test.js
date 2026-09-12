@@ -95,3 +95,15 @@ test("пустой пример из старой базы не превраща
   const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM Examples");
   assert.equal(Number(n), 0);
 });
+
+test("0003: у урока появляется finishedAt, у слова — флажок question (по умолчанию снят)", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  const lessons = await qi.describeTable("Lessons");
+  assert.ok(lessons.finishedAt, "нет Lessons.finishedAt");
+  const words = await qi.describeTable("Words");
+  assert.ok(words.question, "нет Words.question");
+  const [rows] = await db.query("SELECT question FROM Words");
+  assert.ok(rows.every((r) => Number(r.question) === 0), "старые слова должны быть без флажка");
+});

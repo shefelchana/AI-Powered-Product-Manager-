@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, drawImage, dueWords, fromPealim, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, startLesson, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
 
@@ -259,10 +259,52 @@ function DayScreen({ lang, onChanged }) {
 
 // ---------- добавить слово ----------
 
+// Шапка урока: одна кнопка «Начать урок», пока он идёт — «Закончить».
+// Всё, что добавлено между ними, сервер привязывает к этому уроку.
+function LessonBar() {
+  const [lesson, setLesson] = useState(undefined);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    currentLesson().then(setLesson).catch((e) => { setLesson(null); setError(e.message); });
+  }, []);
+
+  async function toggle() {
+    setError(null);
+    try {
+      setLesson(lesson ? null : await startLesson());
+      if (lesson) await finishLesson(lesson.id);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  if (lesson === undefined) return null;
+  return (
+    <div className="lesson-bar">
+      {lesson ? (
+        <>
+          <span>Урок {formatLessonDate(lesson.date)} · идёт</span>
+          <button className="quiet" type="button" onClick={toggle}>Закончить урок</button>
+        </>
+      ) : (
+        <button className="quiet" type="button" onClick={toggle}>Начать урок</button>
+      )}
+      {error && <span className="error">{error}</span>}
+    </div>
+  );
+}
+
+function formatLessonDate(iso) {
+  const [y, m, d] = String(iso ?? "").split("-");
+  return d && m ? `${d}.${m}` : iso;
+}
+
 function AddScreen({ onAdded }) {
   const [term, setTerm] = useState("");
   const [definition, setDefinition] = useState("");
   const [translation, setTranslation] = useState("");
+  const [question, setQuestion] = useState(false);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const termInput = useRef(null);
@@ -273,11 +315,12 @@ function AddScreen({ onAdded }) {
     setSaving(true);
     setStatus(null);
     try {
-      const word = await addWord({ term, definition, translation });
+      const word = await addWord({ term, definition, translation, question });
       // Успех — и только успех — очищает поля.
       setTerm("");
       setDefinition("");
       setTranslation("");
+      setQuestion(false);
       setStatus({ kind: "ok", text: `«${word.term}» записано` });
       onAdded();
     } catch (error) {
@@ -291,6 +334,7 @@ function AddScreen({ onAdded }) {
 
   return (
     <>
+    <LessonBar />
     <form onSubmit={submit}>
       <label className="field-label" htmlFor="term">Новое слово</label>
       <input
@@ -324,6 +368,12 @@ function AddScreen({ onAdded }) {
           onChange={(e) => setTranslation(e.target.value)}
         />
       </details>
+
+      {/* «?» — не поняла, спросить на следующем уроке. Одна галочка, не поле. */}
+      <label className="check">
+        <input type="checkbox" checked={question} onChange={(e) => setQuestion(e.target.checked)} />
+        {" "}не поняла — спросить
+      </label>
 
       <button className="primary" type="submit" disabled={saving}>
         {saving ? "Сохраняю…" : "Сохранить"}
@@ -690,7 +740,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
   if (!open) {
     return (
       <button className="word-row" onClick={onToggle}>
-        <span className="word-row-term" dir={dirOf(word.lang)}>{word.term}</span>
+        <span className="word-row-term" dir={dirOf(word.lang)}>{word.question ? "? " : ""}{word.term}</span>
         <span className="muted">
           {word.definition ? `коробка ${word.box}` : "без объяснения"}
         </span>
@@ -767,6 +817,13 @@ function WordRow({ word, open, onToggle, onChanged }) {
           onClick={() => run(() => fromPealim(word.id))}
         >
           Из Pealim
+        </button>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => run(() => updateWord(word.id, { question: !word.question }))}
+        >
+          {word.question ? "Спросила — снять «?»" : "Не поняла — «?»"}
         </button>
         <button
           className="secondary"

@@ -6,6 +6,8 @@ import { backupDatabase, sequelize, dbKind } from "./db.js";
 import { Word, Example, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
 import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
+import { startLesson, currentLesson, finishLesson } from "./lessons.js";
+import { Lesson } from "./models.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -89,6 +91,10 @@ app.post("/api/words", async (req, res) => {
     definitionSource: definition ? "typed" : "",
     translation: clean(req.body?.translation, MAX_TERM),
     lesson: clean(req.body?.lesson, 120),
+    // Урок берётся с сервера, не с клиента: открытый урок один, и слово
+    // с занятия привязывается к нему без лишнего поля в форме.
+    lessonId: (await currentLesson())?.id ?? null,
+    question: req.body?.question === true,
     box: 1,
     nextDue: today(),
   });
@@ -103,6 +109,30 @@ app.post("/api/import/preview", async (req, res) => {
   const terms = extractTerms(text);
   const existing = new Set((await Word.findAll({ attributes: ["term"] })).map((w) => w.term));
   res.json({ candidates: terms.map((term) => ({ term, exists: existing.has(term) })) });
+});
+
+// Урок на входе. Открытый урок один; слова, добавленные пока он идёт,
+// привязываются к нему (см. POST /api/words).
+app.get("/api/lessons", async (req, res) => {
+  const lessons = await Lesson.findAll({ order: [["id", "DESC"]] });
+  res.json(lessons);
+});
+
+app.get("/api/lessons/current", async (req, res) => {
+  res.json((await currentLesson()) ?? null);
+});
+
+app.post("/api/lessons", async (req, res) => {
+  const lesson = await startLesson({ date: req.body?.date, title: req.body?.title });
+  res.status(201).json(lesson);
+});
+
+app.patch("/api/lessons/:id/finish", async (req, res) => {
+  try {
+    res.json(await finishLesson(req.params.id));
+  } catch (error) {
+    res.status(/не найден/.test(error.message) ? 404 : 409).json({ error: error.message });
+  }
 });
 
 // Filling in a definition later, at home, when there is attention for it.
@@ -134,6 +164,9 @@ app.patch("/api/words/:id", async (req, res) => {
   }
   if (req.body?.translation !== undefined) {
     word.translation = clean(req.body.translation, MAX_TERM);
+  }
+  if (req.body?.question !== undefined) {
+    word.question = req.body.question === true;
   }
   if (req.body?.imageUrl !== undefined) {
     const imageUrl = String(req.body.imageUrl ?? "").trim();

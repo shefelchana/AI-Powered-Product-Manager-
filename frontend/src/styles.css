@@ -532,3 +532,17 @@ button {
   flex: 0 0 auto;
   accent-color: var(--accent, #6ea8fe);
 }
+
+.lesson-bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.check {
+  display: block;
+  margin: 0.75rem 0;
+}

@@ -50,3 +50,6 @@ export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE"
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));
 export const previewImport = (text) => request("/api/import/preview", json("POST", { text }));
+export const currentLesson = () => request("/api/lessons/current");
+export const startLesson = () => request("/api/lessons", json("POST", {}));
+export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("PATCH", {}));

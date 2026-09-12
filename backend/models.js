@@ -67,6 +67,8 @@ export const Word = sequelize.define("Word", {
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
   // Урок, на котором слово записано. Пусто — добавлено вне урока.
   lessonId: { type: DataTypes.INTEGER, allowNull: true },
+  // «?» — не поняла на уроке, спросить. Снимается руками.
+  question: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
@@ -79,6 +81,8 @@ export const Lesson = sequelize.define("Lesson", {
   recordingUrl: { type: DataTypes.STRING(2048), allowNull: false, defaultValue: "" },
   transcriptPath: { type: DataTypes.STRING(500), allowNull: false, defaultValue: "" },
   importedAt: { type: DataTypes.DATE, allowNull: true },
+  // Пусто — урок идёт; всё добавленное привязывается к нему.
+  finishedAt: { type: DataTypes.DATE, allowNull: true },
 });
 
 // Пример — строка с происхождением. Строгий режим должен знать, чья это
