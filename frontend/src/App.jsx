@@ -3,6 +3,7 @@ import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, fi
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
+import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
 // Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
 const todayISO = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -495,6 +496,71 @@ function PracticeScreen({ lang, onFinished }) {
   );
 }
 
+// ---------- учить: раунд как в Quizlet Learn ----------
+
+// Слово сначала узнаётся (выбор из четырёх), потом вспоминается (написание).
+// Ошибка возвращает на ступень назад и ставит слово в конец очереди раунда.
+// В расписание уходит один ответ на слово, когда раунд закончен.
+function LearnScreen({ queue, pool, onFinished }) {
+  const [round, setRound] = useState(() => startRound(queue, pool));
+  const [step, setStep] = useState(() => nextStep(startRound(queue, pool)));
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+  const total = round.queue.length;
+  const mastered = round.queue.filter((q) => q.mastered).length;
+
+  useEffect(() => {
+    if (step !== null || saved) return;
+    // Раунд закончен: записываем ответы в расписание, один на слово.
+    (async () => {
+      const { known, unknown } = roundSummary(round);
+      try {
+        for (const id of known) await reviewWord(id, true);
+        for (const id of unknown) await reviewWord(id, false);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setSaved(true);
+      }
+    })();
+  }, [step, saved]);
+
+  function result(ok) {
+    const next = applyResult(round, step, ok);
+    setRound(next);
+    setStep(nextStep(next));
+  }
+
+  if (step === null) {
+    const s = roundSummary(round);
+    return (
+      <div className="done">
+        <p className="done-title">Раунд закончен</p>
+        <p className="muted">Освоено: {s.mastered} из {s.total}{s.unknown.length ? ` · с ошибками: ${s.unknown.length}, они вернутся сегодня` : ""}</p>
+        {error && <p className="error">{error}</p>}
+        <button className="primary" onClick={onFinished} disabled={!saved}>{saved ? "Дальше" : "Записываю…"}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="review">
+      <p className="review-head">
+        <span className="muted">освоено {mastered} из {total}</span>
+        <button className="exit" onClick={onFinished}>Выйти</button>
+      </p>
+      <div className="progress"><div className="progress-fill" style={{ width: `${(mastered / Math.max(total, 1)) * 100}%` }} /></div>
+      {step.stage === "choose" ? (
+        <ChoiceCard key={`${step.word.id}-c`} word={step.word} choice={step.choice} onAnswer={result} />
+      ) : step.cloze ? (
+        <StrictCard key={`${step.word.id}-t`} word={step.word} cloze={step.cloze} onAnswer={result} onRequeue={() => result(false)} />
+      ) : (
+        <RevealCard key={`${step.word.id}-r`} word={step.word} onAnswer={result} listen={false} />
+      )}
+    </div>
+  );
+}
+
 // ---------- повторять: входы ----------
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
@@ -507,12 +573,15 @@ function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
       ) : (
         <>
           <p className="muted">К повторению: {dueCount}</p>
-          <button className="primary" onClick={() => onReview(10, false, "type")}>Написать на иврите по переводу</button>
-          <button className="primary" onClick={() => onReview(10, false, "choose")}>Выбрать перевод из четырёх</button>
+          <button className="primary" onClick={() => onReview(7, false, "learn")}>Учить: узнать, потом написать</button>
+          <div className="review-menu-row">
+            <button className="secondary" onClick={() => onReview(10, false, "type")}>Только написать по переводу</button>
+            <button className="secondary" onClick={() => onReview(10, false, "choose")}>Только выбрать из четырёх</button>
+          </div>
         </>
       )}
       <div className="review-menu-row">
-        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "type")}>Нет сил — только 3</button>}
+        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "learn")}>Нет сил — только 3</button>}
         {dueCount > 0 && canListen && <button className="secondary" onClick={() => onReview(10, true, "type")}>На слух</button>}
         <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
       </div>
@@ -1106,7 +1175,10 @@ export default function App() {
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, learned, phrases, pending }} />}
-      {view === "review" && (
+      {view === "review" && mode === "learn" && (
+        <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} onFinished={() => { setView("reviewmenu"); reload(); }} />
+      )}
+      {view === "review" && mode !== "learn" && (
         <ReviewScreen
           queue={queue}
           listen={listen}
