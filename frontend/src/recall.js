@@ -81,6 +81,9 @@ function meaningOf(word) {
 const leaks = (prompt, term) => normalize(prompt).includes(normalize(term));
 const dirOfText = (text) => (/[֐-׿]/.test(text) ? "rtl" : "ltr");
 
+// Приоритет (уточнено Анной 12.09): важен перевод, а не объяснение.
+// Перевод → значение преподавателя → своя фраза → фраза урока → словарь.
+// Своя фраза с пропуском при этом остаётся подсказкой рядом с вопросом.
 export function promptFor(word) {
   const term = String(word?.term ?? "").trim();
   if (!term) return null;
@@ -88,23 +91,47 @@ export function promptFor(word) {
   const rows = Array.isArray(word.exampleList) && word.exampleList.length > 0
     ? word.exampleList
     : String(word.examples ?? "").split("\n").filter(Boolean).map((text) => ({ text, origin: "own" }));
-
   const own = clozeIn(rows.filter((r) => r.origin === "own").map((r) => r.text), term);
-  if (own) return { ...own, kind: "own", label: "твоя фраза", dir: dirOfText(own.prompt) };
-
   const lesson = clozeIn(rows.filter((r) => r.origin === "lesson").map((r) => r.text), term);
-  if (lesson) return { ...lesson, kind: "lesson", label: SOURCE_LABELS.lesson, dir: dirOfText(lesson.prompt) };
+  const hint = (own ?? lesson)?.prompt ?? "";
 
   const translation = String(word.translation ?? "").trim();
   if (translation && !leaks(translation, term)) {
-    return { prompt: translation, answer: term, kind: "translation", label: "твой перевод", dir: dirOfText(translation) };
+    return { prompt: translation, answer: term, kind: "translation", label: "твой перевод", dir: dirOfText(translation), hint };
   }
+  const note = String(word.lessonNote ?? "").trim();
+  if (note && !leaks(note, term)) {
+    return { prompt: note, answer: term, kind: "note", label: "преподаватель", dir: dirOfText(note), hint };
+  }
+  if (own) return { ...own, kind: "own", label: "твоя фраза", dir: dirOfText(own.prompt), hint: "" };
+  if (lesson) return { ...lesson, kind: "lesson", label: SOURCE_LABELS.lesson, dir: dirOfText(lesson.prompt), hint: "" };
 
   const meaning = meaningOf(word);
   if (meaning && !leaks(meaning, term)) {
     const label = SOURCE_LABELS[word.definitionSource] ?? "значение";
-    return { prompt: meaning, answer: term, kind: "meaning", label, dir: dirOfText(meaning) };
+    return { prompt: meaning, answer: term, kind: "meaning", label, dir: dirOfText(meaning), hint: "" };
   }
-
   return null;
+}
+
+// ---------- выбор перевода из четырёх ----------
+//
+// Вопрос — слово на иврите, варианты — переводы из колоды: верный и три чужих.
+// Чужие переводы, совпадающие с верным, не берутся: два верных ответа — не вопрос.
+export function choicesFor(word, pool, rng = Math.random) {
+  const correct = String(word?.translation ?? "").trim();
+  if (!correct) return null;
+  const others = [];
+  const seen = new Set([correct]);
+  for (const w of Array.isArray(pool) ? pool : []) {
+    if (w === word || w?.id === word?.id) continue;
+    const tr = String(w?.translation ?? "").trim();
+    if (!tr || seen.has(tr)) continue;
+    seen.add(tr);
+    others.push(tr);
+  }
+  if (others.length < 3) return null;
+  const shuffled = others.map((o) => ({ o, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.o).slice(0, 3);
+  const options = [...shuffled, correct].map((o) => ({ o, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.o);
+  return { options, correct: options.indexOf(correct) };
 }

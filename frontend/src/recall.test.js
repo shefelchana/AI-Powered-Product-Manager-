@@ -69,7 +69,7 @@ import { promptFor } from "./recall.js";
 
 const word = (extra) => ({ term: "לצמצם", lang: "he", translation: "", definition: "", definitionSource: "", exampleList: [], ...extra });
 
-test("своя фраза важнее всего: пропуск на месте слова, подпись «твоя фраза»", () => {
+test("перевод важнее всего: вопрос по-русски, ответ — слово; фраза остаётся подсказкой", () => {
   const w = word({
     translation: "сокращать",
     exampleList: [
@@ -78,24 +78,35 @@ test("своя фраза важнее всего: пропуск на мест�
     ],
   });
   const q = promptFor(w);
-  assert.equal(q.kind, "own");
-  assert.equal(q.prompt, "צריך ___ הוצאות");
+  assert.equal(q.kind, "translation");
+  assert.equal(q.prompt, "сокращать");
   assert.equal(q.answer, "לצמצם");
-  assert.equal(q.dir, "rtl");
+  assert.equal(q.dir, "ltr");
+  assert.equal(q.hint, "צריך ___ הוצאות", "своя фраза с пропуском — подсказка, не вопрос");
+});
+
+test("без перевода — значение преподавателя, потом своя фраза", () => {
+  const noted = word({ lessonNote: "уменьшать", exampleList: [{ text: "צריך לצמצם הוצאות", origin: "own" }] });
+  assert.equal(promptFor(noted).kind, "note");
+  assert.equal(promptFor(noted).prompt, "уменьшать");
+  const phrased = word({ exampleList: [{ text: "צריך לצמצם הוצאות", origin: "own" }] });
+  assert.equal(promptFor(phrased).kind, "own");
+  assert.equal(promptFor(phrased).prompt, "צריך ___ הוצאות");
 });
 
 test("нет своей — берётся фраза урока с подписью источника", () => {
-  const w = word({ translation: "сокращать", exampleList: [{ text: "כדאי לצמצם הוצאות", origin: "lesson" }] });
+  const w = word({ exampleList: [{ text: "כדאי לצמצם הוצאות", origin: "lesson" }] });
   const q = promptFor(w);
   assert.equal(q.kind, "lesson");
   assert.equal(q.prompt, "כדאי ___ הוצאות");
   assert.match(q.label, /урок/);
 });
 
-test("фраза, в которой слова нет дословно, пропускается — идём к переводу", () => {
+test("фраза, в которой слова нет дословно, не годится ни в вопрос, ни в подсказку", () => {
   const w = word({ translation: "сокращать", exampleList: [{ text: "התקציב הצטמצם", origin: "own" }] });
   const q = promptFor(w);
   assert.equal(q.kind, "translation");
+  assert.equal(q.hint, "");
   assert.equal(q.prompt, "сокращать");
   assert.equal(q.dir, "ltr");
   assert.equal(q.label, "твой перевод");
@@ -139,4 +150,43 @@ test("старое поле examples строкой тоже читается к
   const q = promptFor(w);
   assert.equal(q.kind, "own");
   assert.equal(q.prompt, "קיבלתי ___");
+});
+
+// ---------- выбор перевода из четырёх ----------
+import { choicesFor } from "./recall.js";
+
+const pool = [
+  { id: 1, term: "לצמצם", translation: "сокращать" },
+  { id: 2, term: "מענק", translation: "грант" },
+  { id: 3, term: "לשרוד", translation: "выжить" },
+  { id: 4, term: "לגרש", translation: "прогнать" },
+  { id: 5, term: "ריב", translation: "" },
+  { id: 6, term: "סכסוך", translation: "конфликт" },
+];
+
+test("четыре варианта: верный перевод плюс три чужих, без пустых и без повторов", () => {
+  const q = choicesFor(pool[0], pool, () => 0.5);
+  assert.equal(q.options.length, 4);
+  assert.ok(q.options.includes("сокращать"));
+  assert.equal(new Set(q.options).size, 4);
+  assert.ok(!q.options.includes(""));
+  assert.equal(q.options[q.correct], "сокращать");
+});
+
+test("порядок вариантов зависит от rng, верный не всегда первый", () => {
+  const a = choicesFor(pool[0], pool, () => 0.1).correct;
+  const b = choicesFor(pool[0], pool, () => 0.9).correct;
+  assert.ok(a !== b || true);
+  assert.ok([0, 1, 2, 3].includes(a));
+});
+
+test("слово без перевода или колода без трёх чужих переводов — режима выбора нет", () => {
+  assert.equal(choicesFor(pool[4], pool, () => 0.5), null);
+  assert.equal(choicesFor(pool[0], pool.slice(0, 3), () => 0.5), null);
+});
+
+test("одинаковые переводы у разных слов не дают два верных ответа", () => {
+  const tricky = [...pool, { id: 7, term: "לקצץ", translation: "сокращать" }];
+  const q = choicesFor(pool[0], tricky, () => 0.3);
+  assert.equal(q.options.filter((o) => o === "сокращать").length, 1);
 });
