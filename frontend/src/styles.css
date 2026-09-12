@@ -599,7 +599,7 @@ button {
 .word-row-tr { font-size: 0.95rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .word-row-stage { font-size: 0.8rem; }
 
-.progress-block { margin: 0.5rem 0 1rem; }
+.progress-block { margin: 1rem 0; border-top: 1px solid #262a33; padding-top: 0.75rem; }
 .progress-block summary { cursor: pointer; font-weight: 600; margin-bottom: 0.5rem; }
 .stage-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #1d2026; gap: 2px; }
 .stage-seg { display: block; height: 100%; }
@@ -612,3 +612,4 @@ button {
 .activity { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: #2b2f37; display: inline-block; }
 .dot.on { background: #6ea8ff; }
+.miss-hint { color: #e6c15a; margin: 0.25rem 0 0.5rem; }

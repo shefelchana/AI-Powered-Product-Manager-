@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clozeFor, matches, normalize } from "./recall.js";
+import { clozeFor, matches, normalize, missHint } from "./recall.js";
 
 test("огласовки не влияют на сверку", () => {
   // Пары с одинаковым набором букв, отличающиеся только огласовками.
@@ -189,4 +189,28 @@ test("одинаковые переводы у разных слов не даю
   const tricky = [...pool, { id: 7, term: "לקצץ", translation: "сокращать" }];
   const q = choicesFor(pool[0], tricky, () => 0.3);
   assert.equal(q.options.filter((o) => o === "сокращать").length, 1);
+});
+
+// 8.4: при промахе показать, где именно разошлось. Похожие буквы при дислексии —
+// не незнание, а чтение; подсветка вместо «неверно».
+test("похожие буквы: одна подмена — называем пару", () => {
+  assert.equal(missHint("דכישה", "רכישה"), "похожие буквы: ד вместо ר");
+  assert.equal(missHint("מיזוג", "מיזוג"), null);
+});
+
+test("похожие буквы: две подмены перечисляются, разная длина — пропуск или лишняя буква", () => {
+  assert.equal(missHint("לצמצס", "לצמצם"), "похожие буквы: ס вместо ם");
+  assert.equal(missHint("מענ", "מענק"), "не хватает буквы: ק");
+  assert.equal(missHint("מעננק", "מענק"), "лишняя буква: נ");
+});
+
+test("буквы переставлены — говорим об этом; совсем другое слово — без подсказки", () => {
+  assert.equal(missHint("מזיוג", "מיזוג"), "буквы переставлены местами");
+  assert.equal(missHint("שלום", "מיזוג"), null);
+  assert.equal(missHint("", "מיזוג"), null);
+});
+
+test("подсказка не зависит от огласовок и конечных форм", () => {
+  assert.equal(missHint("שָׁלוֹם", "שלום"), null);
+  assert.equal(missHint("רכישה", "רַכִישָׁה"), null);
 });

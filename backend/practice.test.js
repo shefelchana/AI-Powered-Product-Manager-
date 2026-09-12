@@ -19,6 +19,7 @@ test("глагол с формами даёт упражнения на форм
   assert.ok(list.length > 0);
   const ex = list[0];
   assert.equal(ex.kind, "form");
+  assert.equal(ex.kind, "form");
   assert.equal(ex.wordId, 1);
   assert.equal(ex.prompt, "основать");
   assert.ok(ex.formId in forms && ex.formId !== "INF-L", "инфинитив не спрашиваем");
@@ -79,4 +80,47 @@ test("если слов мало, предложения добирают под
   const sentences = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, he: "משפט " + i, ru: "фраза " + i, lessonId: 7, wrongCount: 0 }));
   const list = buildExercises([verb], { limit: 10, rng: () => 0.2, sentences });
   assert.equal(list.length, 10);
+});
+
+// «Мораша»: глагол «поперёк» — одно лицо, все времена подряд, а не одна
+// случайная форма. Шаги идут рядом и по порядку: прошедшее → настоящее → будущее.
+const fullForms = {
+  "INF-L": { vocalized: "לְהָקִים", bare: "להקים" },
+  "AP-ms": { vocalized: "מֵקִים", bare: "מקים" },
+  "AP-fs": { vocalized: "מְקִימָה", bare: "מקימה" },
+  "PERF-3fs": { vocalized: "הֵקִימָה", bare: "הקימה" },
+  "IMPF-3fs": { vocalized: "תָּקִים", bare: "תקים" },
+  "PERF-3ms": { vocalized: "הֵקִים", bare: "הקים" },
+  "IMPF-3ms": { vocalized: "יָקִים", bare: "יקים" },
+};
+const fullVerb = { ...verb, id: 21, forms: JSON.stringify(fullForms) };
+
+test("поперёк: одно лицо во всех временах, шаги рядом и по порядку времён", () => {
+  const list = buildExercises([fullVerb], { limit: 10, rng: () => 0 });
+  const cross = list.filter((e) => e.group);
+  assert.ok(cross.length >= 3, `ожидали связку из трёх, получили ${cross.length}`);
+  assert.ok(cross.every((e) => e.group === cross[0].group && e.wordId === 21));
+  assert.deepEqual(cross.map((e) => e.formId), ["PERF-3fs", "AP-fs", "IMPF-3fs"]);
+  assert.deepEqual(cross.map((e) => e.step), [1, 2, 3]);
+  assert.ok(cross.every((e) => e.steps === 3 && e.person === "она"));
+  assert.deepEqual(cross.map((e) => e.label), ["она · прошедшее", "она · настоящее", "она · будущее"]);
+});
+
+test("поперёк: формы с промахами тянут к себе лицо", () => {
+  const missed = new Map([[21, new Set(["IMPF-3ms"])]]);
+  const list = buildExercises([fullVerb], { limit: 10, rng: () => 0, missed });
+  assert.equal(list[0].person, "он");
+  assert.deepEqual(list.map((e) => e.formId), ["PERF-3ms", "AP-ms", "IMPF-3ms"]);
+});
+
+test("поперёк: если у лица одна форма — обычная одиночная форма, без связки", () => {
+  const lonely = { ...verb, forms: JSON.stringify({ "AP-fs": forms["AP-fs"], "IMPF-1p": forms["IMPF-1p"] }) };
+  const list = buildExercises([lonely], { limit: 10, rng: () => 0.99 });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].group, undefined);
+});
+
+test("лимит режет связку, но не разрывает порядок шагов", () => {
+  const list = buildExercises([fullVerb], { limit: 2, rng: () => 0 });
+  assert.deepEqual(list.map((e) => e.formId), ["PERF-3fs", "AP-fs"]);
 });
