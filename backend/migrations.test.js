@@ -166,3 +166,9 @@ test("0008: таблица ReviewAttempts", async () => {
   await migrate(db);
   assert.ok((await db.getQueryInterface().showAllTables()).includes("ReviewAttempts"));
 });
+
+test("0009: у слова есть dayReason, по умолчанию пусто", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  assert.ok((await db.getQueryInterface().describeTable("Words")).dayReason);
+});
