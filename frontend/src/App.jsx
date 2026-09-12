@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
@@ -10,9 +10,10 @@ const todayISO = () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month
 const isDue = (word) => word.nextDue <= todayISO();
 const dirOf = (lang) => (lang === "he" ? "rtl" : "ltr");
 // Стадия словами, не «коробка 3»: номер коробки — внутренняя механика.
-const STAGES = { 1: "новое", 2: "через день", 3: "через 3 дня", 4: "через неделю", 5: "закрепляется" };
-// «Выучено» — только если слово вспомнилось и после 16-дневной паузы (список из /api/progress).
-const stageOf = (word, learnedIds = []) => (learnedIds.includes(word.id) ? "выучено" : STAGES[word.box] ?? "новое");
+// В списке слов — только «выучено» (вспомнилось после 16-дневной паузы, список из
+// /api/progress). Сроки следующего показа пользователю не нужны (Анна, 12.09);
+// стадии колоды целиком видны в блоке «Прогресс».
+const stageOf = (word, learnedIds = []) => (learnedIds.includes(word.id) ? "выучено" : "");
 const LANGS = { he: "עברית", en: "English", ru: "Русский" };
 
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
@@ -542,7 +543,7 @@ function PracticeScreen({ lang, onFinished }) {
 // Слово сначала узнаётся (выбор из четырёх), потом вспоминается (написание).
 // Ошибка возвращает на ступень назад и ставит слово в конец очереди раунда.
 // В расписание уходит один ответ на слово, когда раунд закончен.
-function LearnScreen({ queue, pool, onFinished }) {
+function LearnScreen({ queue, pool, onFinished, ahead = false }) {
   const [round, setRound] = useState(() => startRound(queue, pool));
   const [step, setStep] = useState(() => nextStep(startRound(queue, pool)));
   const [saved, setSaved] = useState(false);
@@ -556,8 +557,9 @@ function LearnScreen({ queue, pool, onFinished }) {
     (async () => {
       const { known, unknown } = roundSummary(round);
       try {
-        for (const id of known) await reviewWord(id, true, "learn");
-        for (const id of unknown) await reviewWord(id, false, "learn");
+        // Вне расписания «знаю» не записывается: коробка не двигается раньше срока.
+        if (!ahead) for (const id of known) await reviewWord(id, true, "learn");
+        for (const id of unknown) await reviewWord(id, false, ahead ? "ahead" : "learn");
       } catch (e) {
         setError(e.message);
       } finally {
@@ -606,11 +608,20 @@ function LearnScreen({ queue, pool, onFinished }) {
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
 // экраном и на телефоне отодвигали поле ввода на второй экран.
-function ReviewMenu({ dueCount, onReview, onPractice, prep, progress }) {
+function ReviewMenu({ dueCount, onReview, onAhead, onPractice, prep, progress }) {
   return (
     <div className="review-menu">
       {dueCount === 0 ? (
-        <p className="muted">На сегодня всё повторено.</p>
+        <>
+          <p className="muted">На сегодня всё повторено.</p>
+          {/* Вне расписания: «знаю» коробку не двигает, промах возвращает слово на сегодня. */}
+          <button className="primary" onClick={() => onAhead(7, "learn")}>Повторить ещё: узнать, потом написать</button>
+          <div className="review-menu-row">
+            <button className="secondary" onClick={() => onAhead(10, "type")}>Только написать по переводу</button>
+            <button className="secondary" onClick={() => onAhead(10, "choose")}>Только выбрать из четырёх</button>
+          </div>
+          <p className="muted small">Это вне расписания: «знаю» ничего не меняет, промах вернёт слово на сегодня.</p>
+        </>
       ) : (
         <>
           <p className="muted">К повторению: {dueCount}</p>
@@ -848,7 +859,7 @@ function RevealCard({ word, onAnswer, listen }) {
   );
 }
 
-function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "type", practice = false }) {
+function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "type", practice = false, ahead = false }) {
   const [cards, setCards] = useState(queue);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -870,7 +881,7 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
     setError(null);
     try {
       // Повторение к уроку коробки не трогает: это прогон, а не расписание.
-      if (!practice) await reviewWord(word.id, known, listen ? "listen" : mode);
+      if (!practice && !(ahead && known)) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -1115,6 +1126,7 @@ export default function App() {
   const [queue, setQueue] = useState([]);
   const [listen, setListen] = useState(false);
   const [practice, setPractice] = useState(false);
+  const [ahead, setAhead] = useState(false);
   const [mode, setMode] = useState("type");
   const [lessons, setLessons] = useState([]);
   const [report, setReport] = useState(null);
@@ -1156,15 +1168,16 @@ export default function App() {
   const learned = mine.filter((word) => word.box === 5).length;
   const phrases = mine.reduce((sum, word) => sum + exampleList(word).length, 0);
 
-  async function startReview(limit, byEar = false, how = "type") {
+  async function startReview(limit, byEar = false, how = "type", aheadMode = false) {
     try {
-      const next = await dueWords(limit, lang);
+      const next = aheadMode ? await aheadWords(limit, lang) : await dueWords(limit, lang);
       await reload();
       if (next.length === 0) { setView("reviewmenu"); return; }
       setQueue(next);
       setListen(byEar);
       setMode(how);
       setPractice(false);
+      setAhead(aheadMode);
       setView("review");
     } catch (err) {
       setError(err.message);
@@ -1230,6 +1243,7 @@ export default function App() {
         <ReviewMenu
           dueCount={dueCount}
           onReview={(limit, byEar, how) => startReview(limit, byEar, how)}
+          onAhead={(limit, how) => startReview(limit, false, how, true)}
           onPractice={() => setView("practice")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
           progress={<ProgressBlock report={report} stats={{ phrases, pending }} />}
@@ -1240,7 +1254,7 @@ export default function App() {
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
       {view === "review" && mode === "learn" && (
-        <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} onFinished={() => { setView("reviewmenu"); reload(); }} />
+        <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} ahead={ahead} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}
       {view === "review" && mode !== "learn" && (
         <ReviewScreen
@@ -1249,8 +1263,9 @@ export default function App() {
           pool={mine}
           mode={mode}
           practice={practice}
+          ahead={ahead}
           onFinished={() => { setView("reviewmenu"); reload(); }}
-          onMore={() => startReview(10, listen, mode)}
+          onMore={() => startReview(10, listen, mode, ahead)}
         />
       )}
     </main>

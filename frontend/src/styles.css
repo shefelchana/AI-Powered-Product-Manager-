@@ -614,3 +614,4 @@ button {
 .dot.on { background: #6ea8ff; }
 .miss-hint { color: #e6c15a; margin: 0.25rem 0 0.5rem; }
 .listen-big { width: 100%; font-size: 1.2rem; padding: 1rem; margin: 0.5rem 0 1rem; }
+.small { font-size: 0.9rem; }

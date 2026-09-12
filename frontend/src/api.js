@@ -32,6 +32,7 @@ const json = (method, body) => ({
 
 export const listWords = () => request("/api/words");
 export const dueWords = (limit, lang) => request(`/api/words/due?limit=${limit}&lang=${lang}`);
+export const aheadWords = (limit, lang) => request(`/api/words/ahead?limit=${limit}&lang=${lang}`);
 export const addWord = (word) => request("/api/words", json("POST", word));
 export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH", patch));
 export const reviewWord = (id, known, mode = "") =>

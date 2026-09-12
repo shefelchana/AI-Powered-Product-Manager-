@@ -87,6 +87,19 @@ app.get("/api/words/due", async (req, res) => {
   res.json(words.map(withoutImageBytes));
 });
 
+// Когда очередь на сегодня пуста, а повторять хочется: слова не по сроку,
+// ближайшие к сроку первыми. «Знаю» здесь расписание не двигает (см. review),
+// промах возвращает слово на сегодня.
+app.get("/api/words/ahead", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || SESSION_LIMIT, SESSION_LIMIT);
+  const words = await Word.findAll({
+    where: { nextDue: { [Op.gt]: today() }, lang: langOf(req) },
+    order: [["nextDue", "ASC"], ["box", "ASC"], ["misses", "DESC"], ["createdAt", "ASC"]],
+    limit,
+  });
+  res.json(words.map(withoutImageBytes));
+});
+
 app.post("/api/words", async (req, res) => {
   const term = bareTerm(req.body?.term, MAX_TERM);
   if (!term) {
@@ -224,7 +237,7 @@ app.patch("/api/words/:id", async (req, res) => {
 });
 
 // Откуда пришёл ответ: режим повторения. Чужие значения не пишем.
-const REVIEW_MODES = new Set(["type", "choose", "learn", "listen", "reveal"]);
+const REVIEW_MODES = new Set(["type", "choose", "learn", "listen", "reveal", "ahead"]);
 
 app.patch("/api/words/:id/review", async (req, res) => {
   if (typeof req.body?.known !== "boolean") {
