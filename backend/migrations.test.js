@@ -152,3 +152,11 @@ test("0006: таблица Sentences для предложений урока", 
   const cols = await qi.describeTable("Sentences");
   for (const c of ["lessonId", "he", "ru", "audioUrl", "sourceId", "wrongCount"]) assert.ok(cols[c], `нет колонки ${c}`);
 });
+
+test("0007: у слова есть счётчик промахов misses, по умолчанию 0", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  assert.ok((await db.getQueryInterface().describeTable("Words")).misses);
+  const [rows] = await db.query("SELECT misses FROM Words");
+  assert.ok(rows.every((r) => Number(r.misses) === 0));
+});

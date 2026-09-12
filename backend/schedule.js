@@ -29,3 +29,11 @@ export function answer(word, known, now = new Date()) {
   const box = known ? Math.min(clampBox(word.box) + 1, LAST_BOX) : 1;
   return { box, nextDue: dayOffsetFrom(now, INTERVALS[box]) };
 }
+
+// Полная запись ответа: коробка, срок и счётчик промахов. Промахи копятся,
+// не сбрасываются: слово, которое не держится, видно и через месяц.
+export const SUGGEST_IMAGE_AFTER = 3;
+export function recordReview(word, known, now = new Date()) {
+  const next = answer(word, known, now);
+  return { ...next, misses: (Number(word.misses) || 0) + (known ? 0 : 1) };
+}
