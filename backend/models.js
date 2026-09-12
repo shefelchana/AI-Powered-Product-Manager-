@@ -122,3 +122,18 @@ export const PracticeAttempt = sequelize.define("PracticeAttempt", {
   ok: { type: DataTypes.BOOLEAN, allowNull: false },
 });
 PracticeAttempt.belongsTo(Word, { foreignKey: "wordId" });
+
+// Предложение урока: русское → эталонный иврит преподавателя, с аудио.
+export const Sentence = sequelize.define("Sentence", {
+  lessonId: { type: DataTypes.INTEGER, allowNull: false },
+  sourceId: { type: DataTypes.STRING(80), allowNull: false, defaultValue: "" },
+  he: { type: DataTypes.TEXT, allowNull: false },
+  heVocalized: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  ru: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  en: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  audioUrl: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
+  position: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  wrongCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+});
+Sentence.belongsTo(Lesson, { foreignKey: "lessonId" });
+Lesson.hasMany(Sentence, { foreignKey: "lessonId" });

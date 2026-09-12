@@ -9,7 +9,7 @@
 // перезаписываются; значение преподавателя всегда ложится в lessonNote;
 // фраза из урока — строка Examples с origin "lesson" и таймкодом.
 import { Op } from "sequelize";
-import { Word, Example, Lesson, detectLang, today } from "./models.js";
+import { Word, Example, Lesson, Sentence, detectLang, today } from "./models.js";
 
 const MAX_ITEMS = 500;
 const MAX_TEXT = 1000;
@@ -57,6 +57,22 @@ export function parseLessonJson(input) {
     .filter((p) => p.text && isHebrew(p.text))
     .slice(0, MAX_ITEMS);
 
+  // Предложения урока (сайт ульпана): русское → эталонный иврит + аудио.
+  const sentences = (Array.isArray(raw.sentences) ? raw.sentences : [])
+    .filter((s) => s && typeof s === "object")
+    .map((s, i) => ({
+      sourceId: str(s.sourceId, 80),
+      he: hebrew(s.he, MAX_TEXT),
+      heVocalized: str(s.heVocalized, MAX_TEXT),
+      ru: str(s.ru),
+      en: str(s.en),
+      audioUrl: str(s.audio ?? s.audioUrl, 300),
+      position: Number.isInteger(s.index) ? s.index : i + 1,
+      wrong: Boolean(s.myMistake),
+    }))
+    .filter((s) => s.he && isHebrew(s.he))
+    .slice(0, MAX_ITEMS);
+
   return {
     lesson: {
       date: isDate(lesson.date) ? lesson.date : today(),
@@ -66,6 +82,7 @@ export function parseLessonJson(input) {
     items,
     corrections,
     phrases,
+    sentences,
   };
 }
 
@@ -104,7 +121,11 @@ export async function lessonCandidates(doc) {
 
 async function lessonFor(meta) {
   const date = isDate(meta?.date) ? meta.date : today();
-  const found = await Lesson.findOne({ where: { date }, order: [["id", "DESC"]] });
+  // Адрес задания — точнее даты: в один день бывают и классная, и домашняя.
+  const url = str(meta?.recordingUrl, 2048);
+  const found = url
+    ? await Lesson.findOne({ where: { recordingUrl: url } })
+    : await Lesson.findOne({ where: { date, recordingUrl: "" }, order: [["id", "DESC"]] });
   if (found) {
     if (!found.importedAt) {
       found.importedAt = new Date();
@@ -128,11 +149,12 @@ const sourceLabel = (lesson, timestamp) => {
   return `преподаватель · урок ${d}.${m}${timestamp ? ` · ${timestamp}` : ""}`;
 };
 
-export async function applyLessonImport(meta, picks) {
+export async function applyLessonImport(meta, picks, sentences = []) {
   const chosen = (Array.isArray(picks) ? picks : [])
     .map((p) => ({ term: hebrew(p?.term), meaning: str(p?.meaning), example: hebrew(p?.example, MAX_TEXT), timestamp: str(p?.timestamp, 10) }))
     .filter((p) => p.term && isHebrew(p.term));
-  if (chosen.length === 0) throw new Error("Импортировать нечего: ни одного отмеченного кандидата");
+  const lines = (Array.isArray(sentences) ? sentences : []).filter((s) => s && isHebrew(String(s.he ?? "")));
+  if (chosen.length === 0 && lines.length === 0) throw new Error("Импортировать нечего: ни одного отмеченного кандидата");
 
   const lesson = await lessonFor(meta);
   let added = 0;
@@ -174,5 +196,25 @@ export async function applyLessonImport(meta, picks) {
     }
   }
 
-  return { lessonId: lesson.id, added, updated };
+  // Предложения: по sourceId внутри урока, повтор не дублирует; ошибка с сайта — счётчик.
+  let stored = 0;
+  for (const s of lines) {
+    const where = s.sourceId ? { lessonId: lesson.id, sourceId: str(s.sourceId, 80) } : { lessonId: lesson.id, he: hebrew(s.he, MAX_TEXT) };
+    const existing = await Sentence.findOne({ where });
+    if (existing) continue;
+    await Sentence.create({
+      lessonId: lesson.id,
+      sourceId: str(s.sourceId, 80),
+      he: hebrew(s.he, MAX_TEXT),
+      heVocalized: str(s.heVocalized, MAX_TEXT),
+      ru: str(s.ru),
+      en: str(s.en),
+      audioUrl: str(s.audioUrl ?? s.audio, 300),
+      position: Number.isInteger(s.position) ? s.position : 0,
+      wrongCount: s.wrong ? 1 : 0,
+    });
+    stored += 1;
+  }
+
+  return { lessonId: lesson.id, added, updated, sentences: stored };
 }

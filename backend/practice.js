@@ -60,8 +60,26 @@ function pick(list, rng) {
 
 // Вопрос — перевод + подпись формы; ответ — форма без огласовок, с огласовками
 // на показ. Слова последнего урока идут первыми, остальное — в случайном порядке.
-export function buildExercises(words, { limit = 10, rng = Math.random, recentLessonId = null } = {}) {
+export function buildExercises(words, { limit = 10, rng = Math.random, recentLessonId = null, sentences = [] } = {}) {
   const out = [];
+  // Предложения урока: русское → эталонный иврит. Ошибочные на сайте — первыми.
+  for (const s of Array.isArray(sentences) ? sentences : []) {
+    if (!s?.he || !s?.ru) continue;
+    out.push({
+      kind: "sentence",
+      wordId: null,
+      sentenceId: s.id,
+      term: "",
+      prompt: s.ru,
+      label: "предложение",
+      formId: "sentence",
+      answer: s.he,
+      answerVocalized: s.heVocalized || "",
+      audioUrl: s.audioUrl || "",
+      recent: s.lessonId != null && s.lessonId === recentLessonId,
+      wrong: Number(s.wrongCount ?? 0) > 0,
+    });
+  }
   for (const word of Array.isArray(words) ? words : []) {
     const meaning = meaningOf(word);
     if (!meaning) continue;
@@ -102,6 +120,9 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
     }
   }
   // Сначала слова последнего урока, внутри групп — случайно.
-  const shuffled = out.map((ex) => ({ ex, key: rng() })).sort((a, b) => Number(b.ex.recent) - Number(a.ex.recent) || a.key - b.key).map((x) => x.ex);
+  const shuffled = out
+    .map((ex) => ({ ex, key: rng() }))
+    .sort((a, b) => Number(Boolean(b.ex.wrong)) - Number(Boolean(a.ex.wrong)) || Number(b.ex.recent) - Number(a.ex.recent) || a.key - b.key)
+    .map((x) => x.ex);
   return shuffled.slice(0, Math.max(0, limit));
 }
