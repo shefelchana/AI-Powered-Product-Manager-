@@ -60,7 +60,7 @@ test("слово с флажком «?» и уроком уходит наруж
 import { deleteLesson } from "./lessons.js";
 import { Sentence } from "./models.js";
 
-test("пустой урок удаляется, урок со словами или предложениями — нет", async () => {
+test("урок без слов удаляется вместе с предложениями, урок со словами — нет", async () => {
   const empty = await Lesson.create({ date: "2026-09-12", finishedAt: new Date() });
   await deleteLesson(empty.id);
   assert.equal(await Lesson.findByPk(empty.id), null);
@@ -71,6 +71,8 @@ test("пустой урок удаляется, урок со словами и�
 
   const withSentence = await Lesson.create({ date: "2026-09-14", finishedAt: new Date() });
   await Sentence.create({ lessonId: withSentence.id, he: "שלום", ru: "привет" });
-  await assert.rejects(() => deleteLesson(withSentence.id), /предложен/);
+  const gone = await deleteLesson(withSentence.id);
+  assert.equal(gone.sentences, 1, "предложения уходят вместе с уроком");
+  assert.equal(await Sentence.count({ where: { lessonId: withSentence.id } }), 0);
   await assert.rejects(() => deleteLesson(999999), /не найден/);
 });

@@ -35,8 +35,8 @@ export async function deleteLesson(id) {
   if (!lesson) throw new Error("Урок не найден");
   const words = await Word.count({ where: { lessonId: lesson.id } });
   if (words > 0) throw new Error(`У урока есть слова (${words}), удалить нельзя`);
-  const sentences = await Sentence.count({ where: { lessonId: lesson.id } });
-  if (sentences > 0) throw new Error(`У урока есть предложения (${sentences}), удалить нельзя`);
+  // Предложения — часть урока, уходят вместе с ним: их всегда можно импортировать заново.
+  const sentences = await Sentence.destroy({ where: { lessonId: lesson.id } });
   await lesson.destroy();
-  return { id: lesson.id };
+  return { id: lesson.id, sentences };
 }
