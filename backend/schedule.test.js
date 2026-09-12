@@ -1,7 +1,7 @@
 // Расписание повторений — чистые функции, гоняются без базы.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { answer, INTERVALS, LAST_BOX, dayOffsetFrom, localToday } from "./schedule.js";
+import { answer, recordReview, INTERVALS, LAST_BOX, dayOffsetFrom, localToday } from "./schedule.js";
 
 const on = (iso) => new Date(iso + "T12:00:00+03:00");
 
@@ -37,4 +37,11 @@ test("испорченная коробка (0, 9, строка) лечится,
   assert.equal(answer({ box: 0 }, true, on("2026-09-12")).box, 2);
   assert.equal(answer({ box: 9 }, true, on("2026-09-12")).box, 5);
   assert.equal(answer({ box: "2" }, true, on("2026-09-12")).box, 3);
+});
+
+test("промахи копятся на «не знаю» и не сбрасываются на «знаю»", () => {
+  const w = { box: 2, misses: 2 };
+  assert.deepEqual(recordReview(w, false, on("2026-09-12")), { box: 1, nextDue: "2026-09-12", misses: 3 });
+  assert.equal(recordReview({ box: 1, misses: 3 }, true, on("2026-09-12")).misses, 3);
+  assert.equal(recordReview({ box: 1 }, false, on("2026-09-12")).misses, 1, "без поля — считаем с нуля");
 });

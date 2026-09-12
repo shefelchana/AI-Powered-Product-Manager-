@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, recordAttempt, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
@@ -52,6 +52,23 @@ function WordImage({ word }) {
       alt={word.term}
       onError={() => setBroken(true)}
     />
+  );
+}
+
+// Слово, которое не держится (три промаха и больше, картинки нет) — повод
+// нарисовать образ. Предложение, не автоматика: рисуем по нажатию.
+const SUGGEST_IMAGE_AFTER = 3;
+function ImageSuggestion({ word }) {
+  const [state, setState] = useState("idle");
+  if (word.hasImage || (word.misses ?? 0) < SUGGEST_IMAGE_AFTER || state === "done") return null;
+  async function draw() {
+    setState("busy");
+    try { await drawImage(word.id); setState("done"); } catch { setState("idle"); }
+  }
+  return (
+    <button className="quiet" type="button" disabled={state === "busy"} onClick={draw}>
+      {state === "busy" ? "Рисую образ…" : "Не держится — нарисовать образ?"}
+    </button>
   );
 }
 
@@ -178,7 +195,7 @@ function Help({ lang, db }) {
         <li><strong>Каждый день</strong> — вкладка «Слово дня»: одно слово, с которым живёшь весь день. Придумал фразу — записал. Фразы потом всплывают на повторении.</li>
         <li><strong>Повторение</strong> — «Повторять»: не больше 10 слов за раз. Сначала вспомни сам, потом открывай. Нет сил — есть кнопка на три слова.</li>
       </ol>
-      <p className="muted">К слову можно добавить <strong>картинку</strong> — свой яркий образ, а не первую попавшуюся: слово с образом цепляется заметно лучше. А «Повторять на слух» прячет написание и сначала произносит слово — так ухо привыкает к звукам языка.</p>
+      <p className="muted">К слову можно добавить <strong>картинку</strong> — свой яркий образ, а не первую попавшуюся: слово с образом цепляется заметно лучше. На карточке есть кнопка 🔊 — слово можно послушать в любой момент.</p>
       <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
       <VoicePicker lang={lang} />
@@ -568,7 +585,7 @@ function LearnScreen({ queue, pool, onFinished }) {
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
 // экраном и на телефоне отодвигали поле ввода на второй экран.
-function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
+function ReviewMenu({ dueCount, onReview, onPractice, prep }) {
   return (
     <div className="review-menu">
       {dueCount === 0 ? (
@@ -585,7 +602,6 @@ function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
       )}
       <div className="review-menu-row">
         {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "learn")}>Нет сил — только 3</button>}
-        {dueCount > 0 && canListen && <button className="secondary" onClick={() => onReview(10, true, "type")}>На слух</button>}
         <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
       </div>
       {prep}
@@ -674,6 +690,7 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
     <div className="strict">
       {/* Откуда вопрос — видно всегда: своя фраза, урок, перевод или словарь.
           Вопрос может быть на другом языке, чем ответ: направление письма — своё. */}
+      <WordImage word={word} />
       <p className="prompt-label muted">{cloze.label}</p>
       <p className="cloze" dir={cloze.dir}>{cloze.prompt}</p>
       {cloze.hint && <p className="hint muted" dir="rtl">{cloze.hint}</p>}
@@ -729,6 +746,7 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
               <button className="answer-no" onClick={() => onAnswer(false)}>Не знала</button>
               <button className="answer-yes" onClick={() => onAnswer(true)}>Опечатка — я знала</button>
               <button className="quiet" onClick={onRequeue}>Показать ещё раз</button>
+              <ImageSuggestion word={word} />
             </div>
           )}
         </div>
@@ -800,6 +818,7 @@ function RevealCard({ word, onAnswer, listen }) {
         <div className="answers">
           <button className="answer-no" onClick={() => onAnswer(false)}>Не знаю</button>
           <button className="answer-yes" onClick={() => onAnswer(true)}>Знаю ✓</button>
+          <ImageSuggestion word={word} />
         </div>
       )}
     </>
@@ -940,39 +959,11 @@ function WordRow({ word, open, onToggle, onChanged }) {
 
       <label className="field-label">Картинка</label>
       <WordImage word={word} />
-      <input
-        dir="ltr"
-        placeholder="вставь адрес картинки и нажми «Сохранить картинку»"
-        value={draft.imageUrl ?? ""}
-        onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-      />
-      <button
-        className="secondary"
-        disabled={busy || !draft.imageUrl}
-        onClick={() => run(() => saveImage(word.id, draft.imageUrl))}
-      >
-        Сохранить картинку
+      {/* Один способ: приложение рисует образ по переводу. Поиск и ручной адрес
+          ушли — три кнопки на одно действие делали картинку слишком дорогой. */}
+      <button className="secondary" disabled={busy || !(word.translation || word.definition)} onClick={() => run(() => drawImage(word.id))}>
+        {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
       </button>
-      <button
-        className="secondary"
-        disabled={busy}
-        onClick={() => run(() => drawImage(word.id))}
-      >
-        Нарисовать образ
-      </button>
-      <p className="muted">
-        Картинка скачивается и остаётся в приложении: ссылки генераторов живут часы.
-        Рисование уместнее для абстрактных слов — конкретные лучше искать глазами
-        и выбирать тот образ, что запал.
-      </p>
-      <a
-        className="quiet"
-        href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(word.term)}`}
-        target="_blank"
-        rel="noreferrer"
-      >
-        Найти образ — выбери тот, что запал, а не первый попавшийся
-      </a>
 
       <div className="row-actions">
         <button
@@ -1169,7 +1160,6 @@ export default function App() {
       {view === "reviewmenu" && (
         <ReviewMenu
           dueCount={dueCount}
-          canListen={canSpeak()}
           onReview={(limit, byEar, how) => startReview(limit, byEar, how)}
           onPractice={() => setView("practice")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}

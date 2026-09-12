@@ -10,7 +10,7 @@ import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lesson
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
 import { Lesson, PracticeAttempt, Sentence } from "./models.js";
 import { buildExercises } from "./practice.js";
-import { answer } from "./schedule.js";
+import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -227,7 +227,7 @@ app.patch("/api/words/:id/review", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
-  Object.assign(word, answer(word, req.body.known));
+  Object.assign(word, recordReview(word, req.body.known));
   await word.save();
   res.json(withoutImageBytes(word));
 });

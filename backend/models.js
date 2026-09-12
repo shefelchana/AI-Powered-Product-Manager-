@@ -69,6 +69,8 @@ export const Word = sequelize.define("Word", {
   lessonNote: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   // Таблица форм глагола из Pealim, JSON-строкой. Пусто — не глагол или не запрашивали.
   forms: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  // Сколько раз слово не вспомнилось на повторении. После третьего — «нарисовать образ?».
+  misses: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
