@@ -163,7 +163,7 @@ function VoicePicker({ lang }) {
   );
 }
 
-function Help({ lang }) {
+function Help({ lang, db }) {
   return (
     <div className="help">
       <p><strong>Как этим пользоваться</strong></p>
@@ -177,6 +177,7 @@ function Help({ lang }) {
       <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
       <VoicePicker lang={lang} />
+      {db && <p className="muted footer">База: {db}</p>}
     </div>
   );
 }
@@ -286,10 +287,10 @@ function LessonBar() {
       {lesson ? (
         <>
           <span>Урок {formatLessonDate(lesson.date)} · идёт</span>
-          <button className="quiet" type="button" onClick={toggle}>Закончить урок</button>
+          <button className="secondary" type="button" onClick={toggle}>Закончить урок</button>
         </>
       ) : (
-        <button className="quiet" type="button" onClick={toggle}>Начать урок</button>
+        <button className="secondary" type="button" onClick={toggle}>Начать урок</button>
       )}
       {error && <span className="error">{error}</span>}
     </div>
@@ -675,7 +676,11 @@ function PracticeScreen({ lang, onFinished }) {
 
       {result === null && (
         <form onSubmit={check}>
-          <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
+          {ex.kind === "sentence" ? (
+            <textarea className="term-input sentence-input" dir="rtl" autoFocus rows={3} value={typed} onChange={(e) => setTyped(e.target.value)} />
+          ) : (
+            <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
+          )}
           <button className="primary" type="submit">Проверить</button>
           <button className="quiet" type="button" onClick={() => setResult("gaveup")}>Не помню</button>
         </form>
@@ -698,6 +703,26 @@ function PracticeScreen({ lang, onFinished }) {
           <button className="primary" onClick={next}>Дальше</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- повторять: входы ----------
+
+// Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
+// экраном и на телефоне отодвигали поле ввода на второй экран.
+function ReviewMenu({ dueCount, canListen, onReview, onPractice, prep }) {
+  return (
+    <div className="review-menu">
+      <button className="primary" onClick={() => onReview(10, false)} disabled={dueCount === 0}>
+        {dueCount === 0 ? "На сегодня всё повторено" : `Повторить ${Math.min(dueCount, 10)} ${dueCount === 1 ? "слово" : "слов"}`}
+      </button>
+      <div className="review-menu-row">
+        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false)}>Нет сил — только 3</button>}
+        {dueCount > 0 && canListen && <button className="secondary" onClick={() => onReview(10, true)}>На слух</button>}
+        <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
+      </div>
+      {prep}
     </div>
   );
 }
@@ -1095,12 +1120,19 @@ function WordRow({ word, open, onToggle, onChanged }) {
   );
 }
 
-function WordsScreen({ words, onChanged }) {
+function WordsScreen({ words, onChanged, stats }) {
   const [openId, setOpenId] = useState(null);
 
   if (words.length === 0) {
     return <p className="muted">Слов пока нет. Начни с вкладки «Добавить».</p>;
   }
+
+  const counters = stats && (
+    <p className="counters">
+      К повторению: <strong>{stats.dueCount}</strong> · выучено: <strong>{stats.learned}</strong> · своих фраз: <strong>{stats.phrases}</strong>
+      {stats.pending > 0 && <> · без объяснения: <strong>{stats.pending}</strong></>}
+    </p>
+  );
 
   // Сначала то, у чего нет объяснения: это и есть список дел.
   const sorted = [...words].sort((a, b) => {
@@ -1109,6 +1141,8 @@ function WordsScreen({ words, onChanged }) {
   });
 
   return (
+    <>
+      {counters}
     <div>
       {sorted.map((word) => (
         <WordRow
@@ -1120,6 +1154,7 @@ function WordsScreen({ words, onChanged }) {
         />
       ))}
     </div>
+    </>
   );
 }
 
@@ -1212,11 +1247,6 @@ export default function App() {
         </nav>
       )}
 
-      <p className="counters">
-        К повторению: <strong>{dueCount}</strong> · выучено: <strong>{learned}</strong> · своих фраз: <strong>{phrases}</strong>
-        {pending > 0 && <> · без объяснения: <strong>{pending}</strong></>}
-      </p>
-
       {view !== "review" && view !== "practice" && (
         <nav className="nav">
           <button className={view === "day" ? "tab active" : "tab"} onClick={() => setView("day")}>
@@ -1225,8 +1255,8 @@ export default function App() {
           <button className={view === "add" ? "tab active" : "tab"} onClick={() => setView("add")}>
             Добавить
           </button>
-          <button className="tab" onClick={() => startReview(10)} disabled={dueCount === 0}>
-            Повторять
+          <button className={view === "reviewmenu" ? "tab active" : "tab"} onClick={() => setView("reviewmenu")}>
+            Повторять{dueCount > 0 ? ` (${dueCount})` : ""}
           </button>
           <button className={view === "words" ? "tab active" : "tab"} onClick={() => setView("words")}>
             Слова ({mine.length})
@@ -1234,45 +1264,31 @@ export default function App() {
         </nav>
       )}
 
-      {view !== "review" && view !== "practice" && dueCount > 3 && (
-        <button className="quiet" onClick={() => startReview(3)}>
-          Нет сил — только 3 слова
-        </button>
-      )}
-
-      {/* Вход в сессию, а не настройка: настройка была бы лишним решением. */}
-      {view !== "review" && view !== "practice" && dueCount > 0 && canSpeak() && (
-        <button className="quiet" onClick={() => startReview(10, true)}>
-          Повторять на слух
-        </button>
-      )}
-
-      {view !== "review" && view !== "practice" && (
-        <button className="quiet" onClick={() => setView("practice")}>
-          Фразы: формы глагола и предлоги
-        </button>
-      )}
-
-      {view !== "review" && view !== "practice" && <PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
-
       {error && <p className="error">{error}</p>}
 
-      {(showHelp || words.length === 0) && <Help lang={lang} />}
+      {(showHelp || words.length === 0) && <Help lang={lang} db={db} />}
 
-      {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("add"); reload(); }} />}
+      {view === "reviewmenu" && (
+        <ReviewMenu
+          dueCount={dueCount}
+          canListen={canSpeak()}
+          onReview={(limit, byEar) => startReview(limit, byEar)}
+          onPractice={() => setView("practice")}
+          prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
+        />
+      )}
+      {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} />}
+      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, learned, phrases, pending }} />}
       {view === "review" && (
         <ReviewScreen
           queue={queue}
           listen={listen}
           practice={practice}
-          onFinished={() => { setView("add"); reload(); }}
+          onFinished={() => { setView("reviewmenu"); reload(); }}
         />
       )}
-
-      {db && <p className="footer">Database: {db}</p>}
     </main>
   );
 }

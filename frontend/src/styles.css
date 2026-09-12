@@ -564,3 +564,8 @@ button {
   margin: -1rem 0 1.25rem;
   opacity: 0.85;
 }
+
+.review-menu { display: flex; flex-direction: column; gap: 0.9rem; }
+.review-menu-row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.review-menu-row .secondary { flex: 1 1 auto; }
+.sentence-input { min-height: 5.5rem; resize: vertical; font-size: 1.3rem; line-height: 1.5; }
