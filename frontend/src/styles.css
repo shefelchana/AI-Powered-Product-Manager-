@@ -591,3 +591,6 @@ button {
 .choice-right { border-color: #6ee7a8; background: #173326; }
 .choice-wrong { border-color: #ff8a8a; background: #3a1f1f; }
 .choice-dim { opacity: 0.5; }
+
+.progress { height: 6px; background: #1d2026; border-radius: 3px; margin: 0.25rem 0 1rem; overflow: hidden; }
+.progress-fill { height: 100%; background: #6ea8ff; transition: width 0.3s; }
