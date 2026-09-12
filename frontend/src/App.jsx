@@ -517,7 +517,7 @@ function LessonImportBlock({ onAdded }) {
       setPreview(result);
       // Отмечено то, что даст новое: новые слова и фразы к знакомым.
       setPicked(new Set(result.candidates.filter((c) => !c.exists || (c.example && !c.hasExample)).map((c) => c.term)));
-      if (result.candidates.length === 0) setStatus({ kind: "error", text: "В разборе не нашлось ни одного слова" });
+      if (result.candidates.length === 0 && (result.sentences ?? []).length === 0) setStatus({ kind: "error", text: "В разборе не нашлось ни слов, ни предложений" });
     } catch (error) {
       setStatus({ kind: "error", text: error.message });
     } finally {
@@ -537,8 +537,8 @@ function LessonImportBlock({ onAdded }) {
     setStatus(null);
     try {
       const picks = preview.candidates.filter((c) => picked.has(c.term));
-      const result = await applyLesson(preview.lesson, picks);
-      setStatus({ kind: "ok", text: `Урок ${formatLessonDate(preview.lesson.date)}: новых слов ${result.added}, дополнено ${result.updated}` });
+      const result = await applyLesson(preview.lesson, picks, preview.sentences ?? []);
+      setStatus({ kind: "ok", text: `Урок ${formatLessonDate(preview.lesson.date)}: новых слов ${result.added}, дополнено ${result.updated}, предложений ${result.sentences ?? 0}` });
       setText("");
       setPreview(null);
       setPicked(new Set());
@@ -568,9 +568,9 @@ function LessonImportBlock({ onAdded }) {
         {busy && preview === null ? "Разбираю…" : "Показать кандидатов"}
       </button>
 
-      {preview?.candidates.length > 0 && (
+      {preview && (preview.candidates.length > 0 || (preview.sentences ?? []).length > 0) && (
         <>
-          <p className="muted">Урок {formatLessonDate(preview.lesson.date)}{preview.lesson.title ? ` · ${preview.lesson.title}` : ""} · кандидатов: {preview.candidates.length}</p>
+          <p className="muted">Урок {formatLessonDate(preview.lesson.date)}{preview.lesson.title ? ` · ${preview.lesson.title}` : ""} · слов: {preview.candidates.length} · предложений для практики: {(preview.sentences ?? []).length}</p>
           <ul className="import-list lesson-import">
             {preview.candidates.map((c) => (
               <li key={c.term}>
@@ -585,14 +585,25 @@ function LessonImportBlock({ onAdded }) {
               </li>
             ))}
           </ul>
-          <button className="primary" type="button" onClick={write} disabled={busy || picked.size === 0}>
-            {busy ? "Записываю…" : `Записать выбранное (${picked.size})`}
+          <button className="primary" type="button" onClick={write} disabled={busy || (picked.size === 0 && (preview.sentences ?? []).length === 0)}>
+            {busy ? "Записываю…" : `Записать (слов ${picked.size}, предложений ${(preview.sentences ?? []).length})`}
           </button>
         </>
       )}
 
       {status && <p className={status.kind === "error" ? "error" : "ok"}>{status.text}</p>}
     </details>
+  );
+}
+
+// Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
+const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
+function AudioButton({ file }) {
+  const src = /^https?:/.test(file) ? file : SENTENCE_AUDIO + file;
+  return (
+    <button className="listen-again" type="button" onClick={() => new Audio(src).play().catch(() => {})} aria-label="Прослушать">
+      🔊
+    </button>
   );
 }
 
@@ -630,7 +641,7 @@ function PracticeScreen({ lang, onFinished }) {
     event.preventDefault();
     const ok = matches(typed, ex.answer);
     setResult(ok ? "ok" : "miss");
-    try { await recordAttempt(ex.wordId, ex.formId, ok); } catch { /* журнал — не повод останавливать практику */ }
+    try { await recordAttempt(ex.wordId, ex.formId, ok, ex.sentenceId ?? null); } catch { /* журнал — не повод останавливать практику */ }
   }
 
   function next() {
@@ -658,9 +669,9 @@ function PracticeScreen({ lang, onFinished }) {
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
       {note && <p className="muted">{note}</p>}
-      <p className="prompt-label muted">{ex.kind === "form" ? "форма глагола" : "предлог с местоимением"}</p>
+      <p className="prompt-label muted">{{ form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком" }[ex.kind]}</p>
       <p className="cloze" dir="ltr">{ex.prompt}</p>
-      <p className="form-label" dir="ltr">{ex.label}</p>
+      {ex.kind !== "sentence" && <p className="form-label" dir="ltr">{ex.label}</p>}
 
       {result === null && (
         <form onSubmit={check}>
@@ -680,9 +691,10 @@ function PracticeScreen({ lang, onFinished }) {
             </>
           )}
           <p className="review-term" dir="rtl">
-            {ex.answerVocalized || ex.answer} <SpeakButton text={ex.answer} lang="he" />
+            {ex.answerVocalized || ex.answer}{" "}
+            {ex.audioUrl ? <AudioButton file={ex.audioUrl} /> : <SpeakButton text={ex.answer} lang="he" />}
           </p>
-          <p className="muted">{ex.term} · {ex.label}</p>
+          {ex.kind !== "sentence" && <p className="muted">{ex.term} · {ex.label}</p>}
           <button className="primary" onClick={next}>Дальше</button>
         </div>
       )}

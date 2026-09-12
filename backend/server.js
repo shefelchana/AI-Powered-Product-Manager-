@@ -8,7 +8,7 @@ import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
 import { startLesson, currentLesson, finishLesson } from "./lessons.js";
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
-import { Lesson, PracticeAttempt } from "./models.js";
+import { Lesson, PracticeAttempt, Sentence } from "./models.js";
 import { buildExercises } from "./practice.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
@@ -152,12 +152,12 @@ app.post("/api/import/lesson", async (req, res) => {
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
-  res.json({ lesson: doc.lesson, candidates: await lessonCandidates(doc) });
+  res.json({ lesson: doc.lesson, candidates: await lessonCandidates(doc), sentences: doc.sentences });
 });
 
 app.post("/api/import/lesson/apply", async (req, res) => {
   try {
-    res.status(201).json(await applyLessonImport(req.body?.lesson, req.body?.picks));
+    res.status(201).json(await applyLessonImport(req.body?.lesson, req.body?.picks, req.body?.sentences));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -495,15 +495,22 @@ app.get("/api/practice", async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 30);
   const words = await Word.findAll({ where: { lang } });
   const last = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
-  res.json(buildExercises(words, { limit, recentLessonId: last?.id ?? null }));
+  const sentences = lang === "he" ? await Sentence.findAll({ order: [["lessonId", "DESC"], ["position", "ASC"]] }) : [];
+  res.json(buildExercises(words, { limit, recentLessonId: last?.id ?? null, sentences }));
 });
 
 app.post("/api/practice/attempts", async (req, res) => {
-  const wordId = Number(req.body?.wordId);
   const ok = req.body?.ok;
-  if (!Number.isInteger(wordId) || typeof ok !== "boolean") {
-    return res.status(400).json({ error: "Нужны wordId и ok: true или false" });
+  if (typeof ok !== "boolean") return res.status(400).json({ error: "Нужно поле ok: true или false" });
+  const sentenceId = Number(req.body?.sentenceId);
+  if (Number.isInteger(sentenceId) && sentenceId > 0) {
+    const sentence = await Sentence.findByPk(sentenceId);
+    if (!sentence) return res.status(404).json({ error: "Предложение не найдено" });
+    if (!ok) { sentence.wrongCount += 1; await sentence.save(); }
+    return res.status(201).json({ sentenceId, wrongCount: sentence.wrongCount });
   }
+  const wordId = Number(req.body?.wordId);
+  if (!Number.isInteger(wordId)) return res.status(400).json({ error: "Нужен wordId или sentenceId" });
   const word = await Word.findByPk(wordId);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
   const attempt = await PracticeAttempt.create({ wordId, formId: clean(req.body?.formId, 40), ok });

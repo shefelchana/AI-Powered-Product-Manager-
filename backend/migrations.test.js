@@ -143,3 +143,12 @@ test("0005: у слова есть forms, есть таблица PracticeAttemp
   assert.ok((await qi.describeTable("Words")).forms);
   assert.ok((await qi.showAllTables()).includes("PracticeAttempts"));
 });
+
+test("0006: таблица Sentences для предложений урока", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  assert.ok((await qi.showAllTables()).includes("Sentences"));
+  const cols = await qi.describeTable("Sentences");
+  for (const c of ["lessonId", "he", "ru", "audioUrl", "sourceId", "wrongCount"]) assert.ok(cols[c], `нет колонки ${c}`);
+});
