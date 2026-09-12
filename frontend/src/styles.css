@@ -485,7 +485,6 @@ button {
 
 /* ---------- выбор записи в Академии ---------- */
 
-
 /* ---------- картинка и режим на слух ---------- */
 
 .word-image {
@@ -542,28 +541,6 @@ button {
 }
 
 /* Импорт из текста урока: список кандидатов с галочками. */
-.import-list {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0;
-  display: grid;
-  gap: 6px;
-}
-.import-list label {
-  display: flex;
-  direction: ltr;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.import-list input[type="checkbox"] {
-  /* Глобальный стиль растягивает input на всю ширину — галочке это не идёт. */
-  width: auto;
-  flex: 0 0 auto;
-  accent-color: var(--accent, #6ea8fe);
-}
 
 .lesson-bar {
   display: flex;
@@ -572,18 +549,6 @@ button {
   flex-wrap: wrap;
   margin-bottom: 1rem;
   font-weight: 600;
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
-}
-
-.check input {
-  width: auto;
-  margin: 0;
 }
 
 .prep {
@@ -596,11 +561,6 @@ button {
 .prep-head { font-weight: 600; margin-bottom: 0.5rem; }
 .prep ul { margin: 0.5rem 0 0 1.2rem; }
 .prep li { margin: 0.2rem 0; }
-
-.lesson-import li { margin-bottom: 0.6rem; }
-.cand-term { font-size: 1.15rem; font-weight: 600; margin-left: 0.4rem; }
-.cand-meaning { margin: 0.1rem 0 0 1.6rem; }
-.cand-example { margin: 0.1rem 0 0 1.6rem; opacity: 0.8; }
 
 .form-label {
   font-size: 1.1rem;

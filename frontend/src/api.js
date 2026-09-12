@@ -49,12 +49,9 @@ export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE"
 // У агента такого флага нет — ему перезапись запрещена.
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));
-export const previewImport = (text) => request("/api/import/preview", json("POST", { text }));
 export const currentLesson = () => request("/api/lessons/current");
 export const startLesson = () => request("/api/lessons", json("POST", {}));
 export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("PATCH", {}));
-export const previewLesson = (jsonText) => request("/api/import/lesson", json("POST", { json: jsonText }));
-export const applyLesson = (lesson, picks, sentences = []) => request("/api/import/lesson/apply", json("POST", { lesson, picks, sentences }));
 export const listLessons = () => request("/api/lessons");
 export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${lang}`, json("POST", {}));
 export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
