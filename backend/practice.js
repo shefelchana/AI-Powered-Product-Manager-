@@ -37,7 +37,22 @@ function formsOf(word) {
   }
 }
 
-const meaningOf = (word) => String(word.translation || word.lessonNote || word.definition || "").trim();
+// Вопрос — по-русски или по-английски, никогда не на иврите: у строки Академии
+// («מוּדָע — aware») берём часть после тире; вопрос, в котором виден ответ, не годится.
+const NIQQUD_RE = /[֑-ׇ]/g;
+const bare = (text) => String(text ?? "").replace(NIQQUD_RE, "").replace(/[\s.,!?;:"'׳״()\[\]{}\-–—]/g, "").toLowerCase();
+function meaningOf(word) {
+  const own = String(word.translation || word.lessonNote || "").trim();
+  if (own) return own;
+  const definition = String(word.definition ?? "").trim();
+  if (!definition) return "";
+  const text = word.definitionSource === "academy"
+    ? definition.split("\n").map((line) => line.split("—").slice(1).join("—").trim()).filter(Boolean).join("; ")
+    : definition;
+  const head = String(word.term ?? "").trim().split(/\s+/)[0];
+  if (!text || /[א-ת]/.test(text) || (head && bare(text).includes(bare(head)))) return "";
+  return text;
+}
 
 function pick(list, rng) {
   return list[Math.min(list.length - 1, Math.floor(rng() * list.length))];

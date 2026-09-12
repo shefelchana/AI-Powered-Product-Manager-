@@ -57,3 +57,12 @@ test("слова последнего урока идут первыми", () =>
 test("испорченный JSON форм не роняет сборку", () => {
   assert.deepEqual(buildExercises([{ ...verb, forms: "{oops" }], { limit: 3, rng: () => 0 }), []);
 });
+
+test("вопрос никогда не на иврите: строка Академии режется до английской части, утечка ответа — пропуск", () => {
+  const academy = { id: 4, term: "להיות מודע ל", translation: "", lessonNote: "", definition: "מוּדָע — aware\nמוּדָע — conscious", definitionSource: "academy", forms: "" };
+  const list = buildExercises([academy], { limit: 3, rng: () => 0 });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].prompt, "aware; conscious");
+  const leaky = { id: 5, term: "להקל על", translation: "", lessonNote: "", definition: "להקל — облегчить", definitionSource: "typed", forms: "" };
+  assert.deepEqual(buildExercises([leaky], { limit: 3, rng: () => 0 }), []);
+});
