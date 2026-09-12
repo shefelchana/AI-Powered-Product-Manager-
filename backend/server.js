@@ -424,9 +424,15 @@ app.get("/api/lookup/:term", async (req, res) => {
   if (down.length > 0 && down.length < 3) {
     verdict += ` (недоступны: ${down.join(", ")}, проверено не полностью)`;
   }
+  // Четвёртый источник — преподаватель на уроке (lessonNote у слова в колоде).
+  // Он по-русски, со словарями машинно не сравнивается: совет, не запрет.
+  const deckWord = await Word.findOne({ where: { term } });
+  const lesson = deckWord?.lessonNote ? { note: deckWord.lessonNote, lessonId: deckWord.lessonId ?? null } : null;
+  if (lesson) verdict += ` · преподаватель на уроке: «${lesson.note}» — расхождение с преподавателем это совет посмотреть, не запрет`;
 
   res.json({
     term,
+    lesson,
     academy: academy?.candidates ? { candidates: academy.candidates } : academy,
     wiktionary,
     pealim,

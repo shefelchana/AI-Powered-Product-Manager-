@@ -615,3 +615,6 @@ button {
 .miss-hint { color: #e6c15a; margin: 0.25rem 0 0.5rem; }
 .listen-big { width: 100%; font-size: 1.2rem; padding: 1rem; margin: 0.5rem 0 1rem; }
 .small { font-size: 0.9rem; }
+.lesson-list { margin: 0.5rem 0; }
+.lesson-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-top: 1px solid #262a33; }
+.small-btn { padding: 0.35rem 0.7rem; font-size: 0.95rem; white-space: nowrap; }
