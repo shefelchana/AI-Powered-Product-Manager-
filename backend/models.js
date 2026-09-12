@@ -65,6 +65,60 @@ export const Word = sequelize.define("Word", {
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
   // Списки языков раздельные: иврит учится отдельно от английского.
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
+  // Урок, на котором слово записано. Пусто — добавлено вне урока.
+  lessonId: { type: DataTypes.INTEGER, allowNull: true },
+  // «?» — не поняла на уроке, спросить. Снимается руками.
+  question: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  // Значение словами преподавателя. Словарное значение оно не заменяет.
+  lessonNote: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  // Таблица форм глагола из Pealim, JSON-строкой. Пусто — не глагол или не запрашивали.
+  forms: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
+
+// Урок — сущность, а не строка: к нему привязываются слова и фразы, по нему
+// собирается «повторить урок». Ссылка на запись и расшифровку — если есть.
+export const Lesson = sequelize.define("Lesson", {
+  date: { type: DataTypes.DATEONLY, allowNull: false },
+  title: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
+  recordingUrl: { type: DataTypes.STRING(2048), allowNull: false, defaultValue: "" },
+  transcriptPath: { type: DataTypes.STRING(500), allowNull: false, defaultValue: "" },
+  importedAt: { type: DataTypes.DATE, allowNull: true },
+  // Пусто — урок идёт; всё добавленное привязывается к нему.
+  finishedAt: { type: DataTypes.DATE, allowNull: true },
+});
+
+// Пример — строка с происхождением. Строгий режим должен знать, чья это
+// фраза: своя, из урока или из словаря. Старое текстовое поле Words.examples
+// больше не читается и не пишется; уберёт отдельная миграция.
+export const EXAMPLE_ORIGINS = ["own", "lesson", "dictionary"];
+export const Example = sequelize.define("Example", {
+  wordId: { type: DataTypes.INTEGER, allowNull: false },
+  text: { type: DataTypes.TEXT, allowNull: false },
+  origin: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "own" },
+  lessonId: { type: DataTypes.INTEGER, allowNull: true },
+  timestamp: { type: DataTypes.STRING(10), allowNull: false, defaultValue: "" },
+});
+
+Word.belongsTo(Lesson, { foreignKey: "lessonId", as: "lessonRef" });
+Lesson.hasMany(Word, { foreignKey: "lessonId" });
+Word.hasMany(Example, { foreignKey: "wordId", as: "exampleRows", onDelete: "CASCADE", hooks: true });
+Example.belongsTo(Word, { foreignKey: "wordId" });
+Example.belongsTo(Lesson, { foreignKey: "lessonId" });
+
+// Примеры едут вместе со словом везде: так ни один маршрут не забудет их
+// подгрузить, а фронтенд получает examples строкой, как и раньше.
+// separate: примеры отдельным запросом, а не JOIN. JOIN размножал бы байты
+// картинки на число фраз и ломал Word.count().
+Word.addScope("defaultScope", {
+  include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]] }],
+}, { override: true });
+
+// Попытка в практике форм: по каким формам промахи, чтобы спрашивать их чаще.
+export const PracticeAttempt = sequelize.define("PracticeAttempt", {
+  wordId: { type: DataTypes.INTEGER, allowNull: false },
+  formId: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "" },
+  ok: { type: DataTypes.BOOLEAN, allowNull: false },
+});
+PracticeAttempt.belongsTo(Word, { foreignKey: "wordId" });

@@ -10,3 +10,6 @@ build
 .gitignore
 *.log
 .DS_Store
+*.sqlite
+*.sqlite-journal
+backend/public

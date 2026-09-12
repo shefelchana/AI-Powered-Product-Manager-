@@ -4,6 +4,8 @@
 // существительные. Глаголов нет ни там, ни там, а именно их чаще всего
 // приносят с лекции. Без этого источника сверка почти всегда упиралась бы
 // в «оба молчат».
+import { parseConjugation } from "./conjugation.js";
+
 const BASE = "https://www.pealim.com";
 // Сайт чужой и небольшой: ходим редко и представляемся честно.
 const UA = "vocab-cards/1.0 (personal Hebrew study tool; https://github.com/shefelchana/AI-Powered-Product-Manager-)";
@@ -96,5 +98,7 @@ export async function lookupPealim(term) {
     // Транслитерация лежит в слаге ссылки: /dict/532-lehizdarez/
     translit: href.match(/\/dict\/\d+-([^/]+)/)?.[1] ?? "",
     sourceUrl: BASE + href,
+    // Таблица спряжения — для практики форм. Не глагол — пустой объект.
+    forms: parseConjugation(page),
   };
 }

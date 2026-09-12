@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { Op } from "sequelize";
 import { backupDatabase, sequelize, dbKind } from "./db.js";
-import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
+import { Word, Example, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
+import { migrate } from "./migrate.js";
+import { presentWord, addExampleTo } from "./present.js";
+import { startLesson, currentLesson, finishLesson } from "./lessons.js";
+import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
+import { Lesson, PracticeAttempt } from "./models.js";
+import { buildExercises } from "./practice.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -15,11 +21,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
 
 const app = express();
-app.use(express.json());
+// Разбор урока приходит одним JSON: 100 КБ по умолчанию ему может не хватить.
+app.use(express.json({ limit: "2mb" }));
+
+// Пока миграции не доехали, отвечаем 503: хостинг не должен пускать трафик
+// на схему, которая ещё меняется.
+let schemaReady = false;
 
 app.get("/api/health", async (req, res) => {
   try {
     await sequelize.authenticate();
+    if (!schemaReady) return res.status(503).json({ status: "migrating", db: dbKind });
     res.json({ status: "ok", db: dbKind });
   } catch (error) {
     res.status(500).json({ status: "error", db: dbKind, message: error.message });
@@ -48,12 +60,8 @@ const langOf = (req) => (["he", "en", "ru"].includes(req.query.lang) ? req.query
 // а разделение делает фронт. Очередь и слово дня фильтруем на сервере.
 // Байты картинок в списке не отдаём: он читается на каждом экране, а это
 // мегабайты на ровном месте. Отдаём только признак, что картинка есть.
-const withoutImageBytes = (word) => {
-  const plain = word.toJSON();
-  plain.hasImage = Boolean(plain.imageData);
-  delete plain.imageData;
-  return plain;
-};
+// Слово наружу — см. present.js: без байтов картинки, примеры строкой и списком.
+const withoutImageBytes = presentWord;
 
 app.get("/api/words", async (req, res) => {
   const words = await Word.findAll({ order: [["createdAt", "DESC"]] });
@@ -91,6 +99,10 @@ app.post("/api/words", async (req, res) => {
     definitionSource: definition ? "typed" : "",
     translation: clean(req.body?.translation, MAX_TERM),
     lesson: clean(req.body?.lesson, 120),
+    // Урок берётся с сервера, не с клиента: открытый урок один, и слово
+    // с занятия привязывается к нему без лишнего поля в форме.
+    lessonId: (await currentLesson())?.id ?? null,
+    question: req.body?.question === true,
     box: 1,
     nextDue: today(),
   });
@@ -105,6 +117,50 @@ app.post("/api/import/preview", async (req, res) => {
   const terms = extractTerms(text);
   const existing = new Set((await Word.findAll({ attributes: ["term"] })).map((w) => w.term));
   res.json({ candidates: terms.map((term) => ({ term, exists: existing.has(term) })) });
+});
+
+// Урок на входе. Открытый урок один; слова, добавленные пока он идёт,
+// привязываются к нему (см. POST /api/words).
+app.get("/api/lessons", async (req, res) => {
+  const lessons = await Lesson.findAll({ order: [["id", "DESC"]] });
+  res.json(lessons);
+});
+
+app.get("/api/lessons/current", async (req, res) => {
+  res.json((await currentLesson()) ?? null);
+});
+
+app.post("/api/lessons", async (req, res) => {
+  const lesson = await startLesson({ date: req.body?.date, title: req.body?.title });
+  res.status(201).json(lesson);
+});
+
+app.patch("/api/lessons/:id/finish", async (req, res) => {
+  try {
+    res.json(await finishLesson(req.params.id));
+  } catch (error) {
+    res.status(/не найден/.test(error.message) ? 404 : 409).json({ error: error.message });
+  }
+});
+
+// Импорт разбора урока (JSON из конвейера расшифровки). Первый маршрут —
+// только кандидаты, ничего не пишет; второй — запись отмеченного.
+app.post("/api/import/lesson", async (req, res) => {
+  let doc;
+  try {
+    doc = parseLessonJson(req.body?.json ?? req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  res.json({ lesson: doc.lesson, candidates: await lessonCandidates(doc) });
+});
+
+app.post("/api/import/lesson/apply", async (req, res) => {
+  try {
+    res.status(201).json(await applyLessonImport(req.body?.lesson, req.body?.picks));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // Filling in a definition later, at home, when there is attention for it.
@@ -137,6 +193,9 @@ app.patch("/api/words/:id", async (req, res) => {
   if (req.body?.translation !== undefined) {
     word.translation = clean(req.body.translation, MAX_TERM);
   }
+  if (req.body?.question !== undefined) {
+    word.question = req.body.question === true;
+  }
   if (req.body?.imageUrl !== undefined) {
     const imageUrl = String(req.body.imageUrl ?? "").trim();
     // Обрезать адрес нельзя: обрезанный ведёт в никуда, и это молчаливая порча.
@@ -167,7 +226,7 @@ app.patch("/api/words/:id/review", async (req, res) => {
 app.get("/api/word-of-day", async (req, res) => {
   const lang = langOf(req);
   const picked = await Word.findOne({ where: { dayPickedAt: today(), lang } });
-  if (picked) return res.json(picked);
+  if (picked) return res.json(withoutImageBytes(picked));
 
   const candidates = await Word.findAll({
     where: { box: { [Op.lte]: 2 }, lang },
@@ -193,14 +252,16 @@ app.post("/api/words/:id/examples", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
-  word.examples = word.examples ? `${word.examples}\n${text}` : text;
-  await word.save();
-  res.json(withoutImageBytes(word));
+  await addExampleTo(word, text);
+  res.json(withoutImageBytes(await Word.findByPk(word.id)));
 });
 
 app.delete("/api/words/:id", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  // Примеры уходят вместе со словом. Явно, а не через каскад: на SQLite
+  // внешние ключи включены не везде, и молчаливые сироты в таблице не нужны.
+  await Example.destroy({ where: { wordId: word.id } });
   await word.destroy();
   res.json({ ok: true });
 });
@@ -394,8 +455,59 @@ app.post("/api/words/:id/pealim", async (req, res) => {
   word.sourceUrl = found.sourceUrl;
   word.root = found.root;
   word.binyan = found.binyan;
+  if (found.forms && Object.keys(found.forms).length > 0) word.forms = JSON.stringify(found.forms);
   await word.save();
   res.json(withoutImageBytes(word));
+});
+
+// Практика форм. prepare — дотягивает таблицы спряжения для глаголов без форм
+// (не больше пяти за раз: Pealim чужой и небольшой, ходим редко); сам набор
+// упражнений собирается из того, что уже сохранено, без сети.
+const looksLikeVerb = (word) => word.lang === "he" && /^ל[א-ת]{3,}$/.test(word.term) && !word.forms;
+
+app.post("/api/practice/prepare", async (req, res) => {
+  const lang = langOf(req);
+  const candidates = (await Word.findAll({ where: { lang }, order: [["id", "DESC"]] })).filter(looksLikeVerb).slice(0, 5);
+  let fetched = 0;
+  const failed = [];
+  for (const word of candidates) {
+    try {
+      const found = await lookupPealim(word.term);
+      if (found?.forms && Object.keys(found.forms).length > 0) {
+        word.forms = JSON.stringify(found.forms);
+        if (!word.root) word.root = found.root;
+        if (!word.binyan) word.binyan = found.binyan;
+        fetched += 1;
+      } else {
+        // Запомнить, что форм нет, чтобы не спрашивать Pealim каждый раз.
+        word.forms = "{}";
+      }
+      await word.save();
+    } catch (error) {
+      failed.push(word.term);
+    }
+  }
+  res.json({ fetched, checked: candidates.length, failed });
+});
+
+app.get("/api/practice", async (req, res) => {
+  const lang = langOf(req);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 30);
+  const words = await Word.findAll({ where: { lang } });
+  const last = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  res.json(buildExercises(words, { limit, recentLessonId: last?.id ?? null }));
+});
+
+app.post("/api/practice/attempts", async (req, res) => {
+  const wordId = Number(req.body?.wordId);
+  const ok = req.body?.ok;
+  if (!Number.isInteger(wordId) || typeof ok !== "boolean") {
+    return res.status(400).json({ error: "Нужны wordId и ok: true или false" });
+  }
+  const word = await Word.findByPk(wordId);
+  if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  const attempt = await PracticeAttempt.create({ wordId, formId: clean(req.body?.formId, 40), ok });
+  res.status(201).json({ id: attempt.id });
 });
 
 // Слова того же корня. Корень — самая сильная связь между словами в иврите:
@@ -496,11 +608,11 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-// Порт занимаем ДО работы с базой: он служит замком от вторых экземпляров.
-// Скопившиеся «node --watch» однажды перезапустились разом, наперегонки
-// выполнили sync({ alter: true }) — а это перестройка таблицы с перекладкой
-// строк — и стёрли данные друг у друга. Проигравший гонку за порт падает
-// здесь с EADDRINUSE, не успев открыть базу.
+// Порт занимаем ДО работы с базой: локально он служит замком от вторых
+// экземпляров («node --watch» однажды перезапустились разом и стёрли данные
+// друг у друга). На хостинге у каждого контейнера свой порт, поэтому там
+// замок — advisory lock в migrate.js, а /api/health отвечает 503, пока
+// схема не доехала.
 const server = app.listen(PORT);
 await new Promise((resolve, reject) => {
   server.once("listening", resolve);
@@ -511,7 +623,9 @@ await new Promise((resolve, reject) => {
 // (пока базу никто не трогал).
 backupDatabase();
 
-await sequelize.sync({ alter: true });
+// Схема доезжает миграциями (backend/migrations), не sync: см. migrate.js.
+await migrate(sequelize);
+schemaReady = true;
 
 // Слова, заведённые до появления языков, метим по написанию.
 for (const word of await Word.findAll()) {

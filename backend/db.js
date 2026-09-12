@@ -19,7 +19,8 @@ export const sequelize = isPostgres
     })
   : new Sequelize({
       dialect: "sqlite",
-      storage: "./data.sqlite",
+      // В тестах — ":memory:": та же db.js и те же миграции, что на проде.
+      storage: process.env.SQLITE_STORAGE || "./data.sqlite",
       logging: false,
     });
 

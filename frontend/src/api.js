@@ -47,8 +47,15 @@ export const wordOfDay = (lang) => request(`/api/word-of-day?lang=${lang}`);
 export const deleteWord = (id) => request(`/api/words/${id}`, { method: "DELETE" });
 // overwrite: это нажимает человек в приложении и видит, что заменяет.
 // У агента такого флага нет — ему перезапись запрещена.
-export const fromAcademy = (id, href) =>
-  request(`/api/words/${id}/academy`, json("POST", { overwrite: true, ...(href ? { href } : {}) }));
 export const addExample = (id, text) =>
   request(`/api/words/${id}/examples`, json("POST", { text }));
 export const previewImport = (text) => request("/api/import/preview", json("POST", { text }));
+export const currentLesson = () => request("/api/lessons/current");
+export const startLesson = () => request("/api/lessons", json("POST", {}));
+export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("PATCH", {}));
+export const previewLesson = (jsonText) => request("/api/import/lesson", json("POST", { json: jsonText }));
+export const applyLesson = (lesson, picks) => request("/api/import/lesson/apply", json("POST", { lesson, picks }));
+export const listLessons = () => request("/api/lessons");
+export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${lang}`, json("POST", {}));
+export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
+export const recordAttempt = (wordId, formId, ok) => request("/api/practice/attempts", json("POST", { wordId, formId, ok }));
