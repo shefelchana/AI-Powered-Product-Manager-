@@ -1,0 +1,97 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Sequelize, DataTypes } from "sequelize";
+import { migrate, pendingMigrations } from "./migrate.js";
+
+// Миграции гоняются на той же базе, что и прод (SQLite здесь, Postgres там),
+// тем же кодом: тест проверяет ровно тот путь, которым схема доезжает при старте.
+
+const fresh = () => new Sequelize({ dialect: "sqlite", storage: ":memory:", logging: false });
+
+test("на пустой базе появляются Words, Lessons, Examples и колонка lessonId", async () => {
+  const db = fresh();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  const tables = await qi.showAllTables();
+  for (const name of ["Words", "Lessons", "Examples", "SchemaMigrations"]) {
+    assert.ok(tables.includes(name), `нет таблицы ${name}: ${tables}`);
+  }
+  const words = await qi.describeTable("Words");
+  assert.ok(words.lessonId, "у Words нет lessonId");
+  assert.ok(words.examples, "старая колонка examples должна остаться до уборки");
+  const examples = await qi.describeTable("Examples");
+  assert.deepEqual(Object.keys(examples).sort(), ["createdAt", "id", "lessonId", "origin", "text", "timestamp", "updatedAt", "wordId"]);
+});
+
+// База, какой её оставил sync({ alter: true }) до появления миграций:
+// одна таблица Words, примеры — текстом по строке, никакого журнала миграций.
+async function legacyDatabase() {
+  const db = fresh();
+  const qi = db.getQueryInterface();
+  await qi.createTable("Words", {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    term: { type: DataTypes.STRING(200), allowNull: false },
+    definition: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    definitionSource: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
+    translation: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
+    examples: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
+    box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    nextDue: { type: DataTypes.DATEONLY, allowNull: false },
+    createdAt: { type: DataTypes.DATE, allowNull: false },
+    updatedAt: { type: DataTypes.DATE, allowNull: false },
+  });
+  const now = new Date();
+  await qi.bulkInsert("Words", [
+    { term: "לצמצם", definition: "", definitionSource: "", translation: "сокращать", examples: "לצמצם הוצאות\nהתקציב הצטמצם", lang: "he", box: 2, nextDue: "2026-09-12", createdAt: now, updatedAt: now },
+    { term: "מענק", definition: "", definitionSource: "", translation: "грант", examples: "", lang: "he", box: 1, nextDue: "2026-09-12", createdAt: now, updatedAt: now },
+  ]);
+  return db;
+}
+
+test("старая база: примеры переезжают строками, слова целы, недостающие колонки добавляются", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const [words] = await db.query("SELECT id, term, translation, box, lessonId FROM Words ORDER BY id");
+  assert.equal(words.length, 2);
+  assert.equal(words[0].term, "לצמצם");
+  assert.equal(words[0].box, 2);
+  assert.equal(words[0].lessonId, null);
+  const [examples] = await db.query("SELECT wordId, text, origin, lessonId FROM Examples ORDER BY id");
+  assert.deepEqual(examples, [
+    { wordId: words[0].id, text: "לצמצם הוצאות", origin: "own", lessonId: null },
+    { wordId: words[0].id, text: "התקציב הצטמצם", origin: "own", lessonId: null },
+  ]);
+  // Колонки, которых в старой базе не было (root, imageMime, …), появились с дефолтами.
+  const shape = await db.getQueryInterface().describeTable("Words");
+  for (const column of ["root", "binyan", "imageUrl", "imageMime", "sourceLabel", "dayPickedAt", "lesson"]) {
+    assert.ok(shape[column], `после baseline нет колонки ${column}`);
+  }
+});
+
+test("повторный запуск ничего не делает и не дублирует примеры", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  assert.deepEqual(await pendingMigrations(db), []);
+  await migrate(db);
+  const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM Examples");
+  assert.equal(Number(n), 2);
+});
+
+test("пустой пример из старой базы не превращается в строку", async () => {
+  const db = fresh();
+  const qi = db.getQueryInterface();
+  await qi.createTable("Words", {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    term: { type: DataTypes.STRING(200), allowNull: false },
+    examples: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    nextDue: { type: DataTypes.DATEONLY, allowNull: false },
+    createdAt: { type: DataTypes.DATE, allowNull: false },
+    updatedAt: { type: DataTypes.DATE, allowNull: false },
+  });
+  const now = new Date();
+  await qi.bulkInsert("Words", [{ term: "ריב", examples: "\n  \n", nextDue: "2026-09-12", createdAt: now, updatedAt: now }]);
+  await migrate(db);
+  const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM Examples");
+  assert.equal(Number(n), 0);
+});

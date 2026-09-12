@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { Op } from "sequelize";
 import { backupDatabase, sequelize, dbKind } from "./db.js";
-import { Word, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
+import { Word, Example, INTERVALS, LAST_BOX, dayOffset, detectLang, today } from "./models.js";
+import { migrate } from "./migrate.js";
+import { presentWord, addExampleTo } from "./present.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
 import { lookupWiktionary } from "./wiktionary.js";
 import { lookupPealim } from "./pealim.js";
@@ -48,12 +50,8 @@ const langOf = (req) => (["he", "en", "ru"].includes(req.query.lang) ? req.query
 // а разделение делает фронт. Очередь и слово дня фильтруем на сервере.
 // Байты картинок в списке не отдаём: он читается на каждом экране, а это
 // мегабайты на ровном месте. Отдаём только признак, что картинка есть.
-const withoutImageBytes = (word) => {
-  const plain = word.toJSON();
-  plain.hasImage = Boolean(plain.imageData);
-  delete plain.imageData;
-  return plain;
-};
+// Слово наружу — см. present.js: без байтов картинки, примеры строкой и списком.
+const withoutImageBytes = presentWord;
 
 app.get("/api/words", async (req, res) => {
   const words = await Word.findAll({ order: [["createdAt", "DESC"]] });
@@ -193,14 +191,16 @@ app.post("/api/words/:id/examples", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
-  word.examples = word.examples ? `${word.examples}\n${text}` : text;
-  await word.save();
-  res.json(withoutImageBytes(word));
+  await addExampleTo(word, text);
+  res.json(withoutImageBytes(await Word.findByPk(word.id)));
 });
 
 app.delete("/api/words/:id", async (req, res) => {
   const word = await Word.findByPk(req.params.id);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
+  // Примеры уходят вместе со словом. Явно, а не через каскад: на SQLite
+  // внешние ключи включены не везде, и молчаливые сироты в таблице не нужны.
+  await Example.destroy({ where: { wordId: word.id } });
   await word.destroy();
   res.json({ ok: true });
 });
@@ -511,7 +511,8 @@ await new Promise((resolve, reject) => {
 // (пока базу никто не трогал).
 backupDatabase();
 
-await sequelize.sync({ alter: true });
+// Схема доезжает миграциями (backend/migrations), не sync: см. migrate.js.
+await migrate(sequelize);
 
 // Слова, заведённые до появления языков, метим по написанию.
 for (const word of await Word.findAll()) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, deleteWord, drawImage, dueWords, fromAcademy, fromPealim, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, deleteWord, drawImage, dueWords, fromPealim, listWords, previewImport, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { clozeFor, matches } from "./recall.js";
 
@@ -168,12 +168,12 @@ function Help({ lang }) {
       <p><strong>Как этим пользоваться</strong></p>
       <ol>
         <li><strong>На занятии</strong> — вкладка «Добавить»: вбей слово и жми Enter. Перевод и объяснение можно не заполнять, это делается потом.</li>
-        <li><strong>Дома</strong> — вкладка «Слова»: нажми на слово, чтобы поправить опечатку, или возьми справку из Академии языка иврит одной кнопкой.</li>
+        <li><strong>Дома</strong> — вкладка «Слова»: нажми на слово, чтобы поправить опечатку, или возьми значение, корень и биньян из Pealim одной кнопкой.</li>
         <li><strong>Каждый день</strong> — вкладка «Слово дня»: одно слово, с которым живёшь весь день. Придумал фразу — записал. Фразы потом всплывают на повторении.</li>
         <li><strong>Повторение</strong> — «Повторять»: не больше 10 слов за раз. Сначала вспомни сам, потом открывай. Нет сил — есть кнопка на три слова.</li>
       </ol>
       <p className="muted">К слову можно добавить <strong>картинку</strong> — свой яркий образ, а не первую попавшуюся: слово с образом цепляется заметно лучше. А «Повторять на слух» прячет написание и сначала произносит слово — так ухо привыкает к звукам языка.</p>
-      <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать. Английское слово можно спросить у Академии — она двуязычная и вернёт официальный ивритский эквивалент.</p>
+      <p className="muted">Языки разделены сами: иврит, английский и русский живут отдельными списками, переключатель наверху появляется, когда есть что переключать.</p>
       <p className="muted">Слово возвращается через 0, 1, 3, 7 и 16 дней — первый раз в тот же день, потому что забывается быстрее всего в первые сутки.</p>
       <VoicePicker lang={lang} />
     </div>
@@ -665,9 +665,8 @@ function WordRow({ word, open, onToggle, onChanged }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [choices, setChoices] = useState([]);
 
-  // Слово могло измениться на сервере — например, справка пришла из Академии.
+  // Слово могло измениться на сервере — например, значение пришло из Pealim.
   // Без этого в полях остаётся старый черновик и следующее «Сохранить»
   // затирает только что полученное.
   useEffect(() => { setDraft(word); }, [word.id, word.updatedAt]);
@@ -676,9 +675,7 @@ function WordRow({ word, open, onToggle, onChanged }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await action();
-      // Точного совпадения в Академии нет — выбирает человек.
-      setChoices(result?.candidates ?? []);
+      await action();
       await onChanged();
     } catch (err) {
       setError(err.message);
@@ -764,13 +761,6 @@ function WordRow({ word, open, onToggle, onChanged }) {
         <button
           className="secondary"
           disabled={busy}
-          onClick={() => run(() => fromAcademy(word.id))}
-        >
-          Из Академии
-        </button>
-        <button
-          className="secondary"
-          disabled={busy}
           onClick={() => run(() => fromPealim(word.id))}
         >
           Из Pealim
@@ -798,24 +788,6 @@ function WordRow({ word, open, onToggle, onChanged }) {
           <button className="secondary" onClick={() => setConfirming(true)}>Удалить</button>
         )}
       </div>
-
-      {choices.length > 0 && (
-        <div className="choices">
-          <p className="muted">Точного совпадения нет. Что из этого?</p>
-          {choices.map((choice) => (
-            <button
-              key={choice.href}
-              className="secondary"
-              dir="rtl"
-              disabled={busy}
-              onClick={() => run(() => fromAcademy(word.id, choice.href))}
-            >
-              {choice.display}
-            </button>
-          ))}
-          <button className="quiet" onClick={() => setChoices([])}>Ничего не подходит</button>
-        </div>
-      )}
 
       {error && <p className="error">{error}</p>}
       <button className="quiet" onClick={onToggle}>Свернуть</button>

@@ -65,6 +65,40 @@ export const Word = sequelize.define("Word", {
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
   // Списки языков раздельные: иврит учится отдельно от английского.
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
+  // Урок, на котором слово записано. Пусто — добавлено вне урока.
+  lessonId: { type: DataTypes.INTEGER, allowNull: true },
   box: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   nextDue: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: today },
 });
+
+// Урок — сущность, а не строка: к нему привязываются слова и фразы, по нему
+// собирается «повторить урок». Ссылка на запись и расшифровку — если есть.
+export const Lesson = sequelize.define("Lesson", {
+  date: { type: DataTypes.DATEONLY, allowNull: false },
+  title: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "" },
+  recordingUrl: { type: DataTypes.STRING(2048), allowNull: false, defaultValue: "" },
+  transcriptPath: { type: DataTypes.STRING(500), allowNull: false, defaultValue: "" },
+  importedAt: { type: DataTypes.DATE, allowNull: true },
+});
+
+// Пример — строка с происхождением. Строгий режим должен знать, чья это
+// фраза: своя, из урока или из словаря. Старое текстовое поле Words.examples
+// больше не читается и не пишется; уберёт отдельная миграция.
+export const EXAMPLE_ORIGINS = ["own", "lesson", "dictionary"];
+export const Example = sequelize.define("Example", {
+  wordId: { type: DataTypes.INTEGER, allowNull: false },
+  text: { type: DataTypes.TEXT, allowNull: false },
+  origin: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "own" },
+  lessonId: { type: DataTypes.INTEGER, allowNull: true },
+  timestamp: { type: DataTypes.STRING(10), allowNull: false, defaultValue: "" },
+});
+
+Word.belongsTo(Lesson, { foreignKey: "lessonId", as: "lessonRef" });
+Lesson.hasMany(Word, { foreignKey: "lessonId" });
+Word.hasMany(Example, { foreignKey: "wordId", as: "exampleRows", onDelete: "CASCADE", hooks: true });
+Example.belongsTo(Word, { foreignKey: "wordId" });
+Example.belongsTo(Lesson, { foreignKey: "lessonId" });
+
+// Примеры едут вместе со словом везде: так ни один маршрут не забудет их
+// подгрузить, а фронтенд получает examples строкой, как и раньше.
+Word.addScope("defaultScope", { include: [{ model: Example, as: "exampleRows" }] }, { override: true });
