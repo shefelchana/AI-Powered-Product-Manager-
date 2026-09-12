@@ -53,7 +53,8 @@ test("две работы в один день — два разных урок�
 test("практика: предложение — вопрос по-русски, ответ эталон, аудио; ошибочные идут первыми", async () => {
   const lesson = await Lesson.findOne({ where: { date: "2026-09-09" } });
   const sentences = await Sentence.findAll({ where: { lessonId: lesson.id } });
-  const list = buildExercises([], { limit: 10, rng: () => 0.3, recentLessonId: lesson.id, sentences });
+  // rng ≥ 0.5 — вариант «вопрос по-русски»; ниже половины предложение с аудио уходит в диктант.
+  const list = buildExercises([], { limit: 10, rng: () => 0.7, recentLessonId: lesson.id, sentences });
   assert.equal(list.length, 2);
   assert.equal(list[0].kind, "sentence");
   assert.equal(list[0].answer, "הם מסוכסכים אחד עם השני.");

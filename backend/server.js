@@ -10,6 +10,7 @@ import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lesson
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
 import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
 import { progressReport } from "./progress.js";
+import { bareTerm } from "./terms.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -87,7 +88,7 @@ app.get("/api/words/due", async (req, res) => {
 });
 
 app.post("/api/words", async (req, res) => {
-  const term = clean(req.body?.term, MAX_TERM);
+  const term = bareTerm(req.body?.term, MAX_TERM);
   if (!term) {
     return res.status(400).json({ error: "Слово не может быть пустым" });
   }
