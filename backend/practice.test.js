@@ -124,3 +124,27 @@ test("лимит режет связку, но не разрывает поря�
   const list = buildExercises([fullVerb], { limit: 2, rng: () => 0 });
   assert.deepEqual(list.map((e) => e.formId), ["PERF-3fs", "AP-fs"]);
 });
+
+// «Мораша»: слух первым. Предложение с аудио преподавателя половину раз
+// приходит диктантом: русский текст скрыт, слышишь — пишешь на иврите.
+test("диктант: предложение с аудио становится диктантом по rng, без аудио — никогда", () => {
+  const withAudio = [{ id: 1, he: "אני רוצה לאכול", heVocalized: "", ru: "я хочу есть", audioUrl: "a.mp3", lessonId: 7, wrongCount: 0 }];
+  const dict = buildExercises([], { limit: 5, rng: () => 0.2, sentences: withAudio });
+  assert.equal(dict.length, 1);
+  assert.equal(dict[0].kind, "dictation");
+  assert.equal(dict[0].prompt, "", "вопрос скрыт — только звук");
+  assert.equal(dict[0].translation, "я хочу есть");
+  assert.equal(dict[0].answer, "אני רוצה לאכול");
+  assert.equal(dict[0].audioUrl, "a.mp3");
+  assert.equal(dict[0].formId, "dictation");
+  const plain = buildExercises([], { limit: 5, rng: () => 0.9, sentences: withAudio });
+  assert.equal(plain[0].kind, "sentence");
+  const silent = buildExercises([], { limit: 5, rng: () => 0.2, sentences: [{ ...withAudio[0], audioUrl: "" }] });
+  assert.equal(silent[0].kind, "sentence");
+});
+
+test("диктанты считаются предложениями в квоте 60%", () => {
+  const sentences = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, he: "משפט " + i, ru: "фраза " + i, audioUrl: "s.mp3", lessonId: 7, wrongCount: 0 }));
+  const list = buildExercises([verb, prep, { ...verb, id: 11 }, { ...prep, id: 12 }], { limit: 10, rng: () => 0.2, sentences });
+  assert.equal(list.filter((e) => e.kind === "sentence" || e.kind === "dictation").length, 6);
+});

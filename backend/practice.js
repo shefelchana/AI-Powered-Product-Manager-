@@ -81,16 +81,20 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
   const units = [];
   const out = { push: (ex) => units.push([ex]) };
   // Предложения урока: русское → эталонный иврит. Ошибочные на сайте — первыми.
+  // С аудио преподавателя половина предложений идёт диктантом: слух первым
+  // («Мораша»), русский текст скрыт до ответа.
   for (const s of Array.isArray(sentences) ? sentences : []) {
     if (!s?.he || !s?.ru) continue;
+    const dictation = Boolean(s.audioUrl) && rng() < 0.5;
     out.push({
-      kind: "sentence",
+      kind: dictation ? "dictation" : "sentence",
       wordId: null,
       sentenceId: s.id,
       term: "",
-      prompt: s.ru,
-      label: "предложение",
-      formId: "sentence",
+      prompt: dictation ? "" : s.ru,
+      translation: s.ru,
+      label: dictation ? "на слух" : "предложение",
+      formId: dictation ? "dictation" : "sentence",
       answer: s.he,
       answerVocalized: s.heVocalized || "",
       audioUrl: s.audioUrl || "",
@@ -174,8 +178,9 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
   // не попадались бы вовсе. Предложениям — не больше 60% подхода, остаток
   // добирается тем, что есть.
   const cap = Math.max(0, limit);
-  const sentencesFirst = shuffled.filter((u) => head(u).kind === "sentence");
-  const others = shuffled.filter((u) => head(u).kind !== "sentence");
+  const isSentence = (u) => head(u).kind === "sentence" || head(u).kind === "dictation";
+  const sentencesFirst = shuffled.filter(isSentence);
+  const others = shuffled.filter((u) => !isSentence(u));
   const othersCount = others.reduce((n, u) => n + u.length, 0);
   const sentenceQuota = Math.min(sentencesFirst.length, Math.max(cap - othersCount, Math.ceil(cap * 0.6)));
   const take = (list, room) => {

@@ -411,8 +411,18 @@ function AddScreen({ onAdded }) {
 
 // Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
 const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
-function AudioButton({ file }) {
+function AudioButton({ file, big = false, autoPlay = false }) {
   const src = /^https?:/.test(file) ? file : SENTENCE_AUDIO + file;
+  useEffect(() => {
+    if (autoPlay) new Audio(src).play().catch(() => {});
+  }, [src, autoPlay]);
+  if (big) {
+    return (
+      <button className="secondary listen-big" type="button" onClick={() => new Audio(src).play().catch(() => {})}>
+        🔊 Послушать ещё раз
+      </button>
+    );
+  }
   return (
     <button className="listen-again" type="button" onClick={() => new Audio(src).play().catch(() => {})} aria-label="Прослушать">
       🔊
@@ -483,14 +493,18 @@ function PracticeScreen({ lang, onFinished }) {
       </p>
       {note && <p className="muted">{note}</p>}
       <p className="prompt-label muted">
-        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком" }[ex.kind]}
+        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", dictation: "на слух: послушай и напиши на иврите" }[ex.kind]}
       </p>
-      <p className="cloze" dir="ltr">{ex.prompt}</p>
-      {ex.kind !== "sentence" && <p className="form-label" dir="ltr">{ex.label}</p>}
+      {ex.kind === "dictation" ? (
+        result === null && <AudioButton key={ex.sentenceId} file={ex.audioUrl} big autoPlay />
+      ) : (
+        <p className="cloze" dir="ltr">{ex.prompt}</p>
+      )}
+      {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="form-label" dir="ltr">{ex.label}</p>}
 
       {result === null && (
         <form onSubmit={check}>
-          {ex.kind === "sentence" ? (
+          {ex.kind === "sentence" || ex.kind === "dictation" ? (
             <textarea className="term-input sentence-input" dir="rtl" autoFocus rows={3} value={typed} onChange={(e) => setTyped(e.target.value)} />
           ) : (
             <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
@@ -514,7 +528,8 @@ function PracticeScreen({ lang, onFinished }) {
             {ex.answerVocalized || ex.answer}{" "}
             {ex.audioUrl ? <AudioButton file={ex.audioUrl} /> : <SpeakButton text={ex.answer} lang="he" />}
           </p>
-          {ex.kind !== "sentence" && <p className="muted">{ex.term} · {ex.label}</p>}
+          {ex.kind === "dictation" && <p className="muted" dir="ltr">{ex.translation}</p>}
+          {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="muted">{ex.term} · {ex.label}</p>}
           <button className="primary" onClick={next}>Дальше</button>
         </div>
       )}
