@@ -524,9 +524,20 @@ app.get("/api/practice", async (req, res) => {
   const lang = langOf(req);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 30);
   const words = await Word.findAll({ where: { lang } });
-  const last = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
   const sentences = lang === "he" ? await Sentence.findAll({ order: [["lessonId", "DESC"], ["position", "ASC"]] }) : [];
-  res.json(buildExercises(words, { limit, recentLessonId: last?.id ?? null, sentences }));
+  // Формы, где последняя попытка была промахом, тянут к себе лицо в «поперёк».
+  const ids = words.map((w) => w.id);
+  const attempts = ids.length ? await PracticeAttempt.findAll({ where: { wordId: { [Op.in]: ids } }, order: [["id", "ASC"]] }) : [];
+  const last = new Map();
+  for (const a of attempts) last.set(`${a.wordId}:${a.formId}`, a);
+  const missed = new Map();
+  for (const a of last.values()) {
+    if (a.ok || !a.formId) continue;
+    if (!missed.has(a.wordId)) missed.set(a.wordId, new Set());
+    missed.get(a.wordId).add(a.formId);
+  }
+  res.json(buildExercises(words, { limit, recentLessonId: lastLesson?.id ?? null, sentences, missed }));
 });
 
 app.post("/api/practice/attempts", async (req, res) => {

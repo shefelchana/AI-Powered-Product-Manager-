@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
-import { choicesFor, matches, promptFor } from "./recall.js";
+import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -482,7 +482,9 @@ function PracticeScreen({ lang, onFinished }) {
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
       {note && <p className="muted">{note}</p>}
-      <p className="prompt-label muted">{{ form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком" }[ex.kind]}</p>
+      <p className="prompt-label muted">
+        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком" }[ex.kind]}
+      </p>
       <p className="cloze" dir="ltr">{ex.prompt}</p>
       {ex.kind !== "sentence" && <p className="form-label" dir="ltr">{ex.label}</p>}
 
@@ -505,6 +507,7 @@ function PracticeScreen({ lang, onFinished }) {
             <>
               <p className="muted">Ты написала:</p>
               <p className="typed" dir="rtl">{typed}</p>
+              {missHint(typed, ex.answer) && <p className="miss-hint">{missHint(typed, ex.answer)}</p>}
             </>
           )}
           <p className="review-term" dir="rtl">
@@ -588,7 +591,7 @@ function LearnScreen({ queue, pool, onFinished }) {
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
 // экраном и на телефоне отодвигали поле ввода на второй экран.
-function ReviewMenu({ dueCount, onReview, onPractice, prep }) {
+function ReviewMenu({ dueCount, onReview, onPractice, prep, progress }) {
   return (
     <div className="review-menu">
       {dueCount === 0 ? (
@@ -608,6 +611,7 @@ function ReviewMenu({ dueCount, onReview, onPractice, prep }) {
         <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
       </div>
       {prep}
+      {progress}
     </div>
   );
 }
@@ -732,6 +736,7 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
                   двоеточие уезжает в конец и читается как мусор. */}
               <p className="muted">Ты написала:</p>
               <p className="typed" dir={dirOf(word.lang)}>{typed}</p>
+              {missHint(typed, cloze.answer) && <p className="miss-hint">{missHint(typed, cloze.answer)}</p>}
             </>
           )}
           <p className="review-term" dir={dirOf(word.lang)}>
@@ -1019,7 +1024,7 @@ function ProgressBlock({ report, stats }) {
   const pct = (n) => Math.round((n / total) * 100);
   const ret = report.retention;
   return (
-    <details className="progress-block" open>
+    <details className="progress-block">
       <summary>Прогресс</summary>
       <div className="stage-bar" aria-hidden="true">
         {STAGE_ORDER.map(([k]) => report.stages[k] > 0 && <span key={k} className={`stage-seg stage-${k}`} style={{ width: `${pct(report.stages[k])}%` }} />)}
@@ -1028,7 +1033,7 @@ function ProgressBlock({ report, stats }) {
         {STAGE_ORDER.filter(([k]) => report.stages[k] > 0).map(([k, name]) => `${name} ${report.stages[k]}`).join(" · ")}
       </p>
       <p className="muted">
-        К повторению: <strong>{stats.dueCount}</strong> · своих фраз: <strong>{stats.phrases}</strong>
+        Своих фраз: <strong>{stats.phrases}</strong>
         {stats.pending > 0 && <> · без перевода: <strong>{stats.pending}</strong></>}
       </p>
       <p>
@@ -1055,19 +1060,12 @@ function ProgressBlock({ report, stats }) {
   );
 }
 
-function WordsScreen({ words, onChanged, stats, canDraw = true, lang = "he" }) {
+function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
   const [openId, setOpenId] = useState(null);
-  const [report, setReport] = useState(null);
-
-  useEffect(() => {
-    progress(lang).then(setReport).catch(() => setReport(null));
-  }, [lang, words]);
 
   if (words.length === 0) {
     return <p className="muted">Слов пока нет. Начни с вкладки «Добавить».</p>;
   }
-
-  const counters = <ProgressBlock report={report} stats={stats} />;
 
   // Сначала то, у чего нет перевода: это и есть список дел. Потом новые.
   const sorted = [...words].sort((a, b) => {
@@ -1076,8 +1074,6 @@ function WordsScreen({ words, onChanged, stats, canDraw = true, lang = "he" }) {
   });
 
   return (
-    <>
-      {counters}
     <div>
       {sorted.map((word) => (
         <WordRow
@@ -1085,11 +1081,10 @@ function WordsScreen({ words, onChanged, stats, canDraw = true, lang = "he" }) {
           word={word}
           open={openId === word.id}
           onToggle={() => setOpenId(openId === word.id ? null : word.id)}
-          onChanged={onChanged} canDraw={canDraw} learnedIds={report?.learnedIds ?? []}
+          onChanged={onChanged} canDraw={canDraw} learnedIds={learnedIds}
         />
       ))}
     </div>
-    </>
   );
 }
 
@@ -1107,6 +1102,7 @@ export default function App() {
   const [practice, setPractice] = useState(false);
   const [mode, setMode] = useState("type");
   const [lessons, setLessons] = useState([]);
+  const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
 
   const reload = useCallback(async () => {
@@ -1132,6 +1128,11 @@ export default function App() {
 
   // Списки языков раздельные: иврит учится отдельно от английского.
   const mine = words.filter((word) => word.lang === lang);
+
+  // Отчёт о прогрессе живёт на «Повторять»; вкладке «Слова» нужен только список выученных.
+  useEffect(() => {
+    progress(lang).then(setReport).catch(() => setReport(null));
+  }, [lang, words]);
   const counts = words.reduce((acc, word) => ({ ...acc, [word.lang]: (acc[word.lang] ?? 0) + 1 }), {});
   const otherLangs = Object.keys(LANGS).filter((code) => code !== lang && counts[code]);
 
@@ -1216,12 +1217,13 @@ export default function App() {
           onReview={(limit, byEar, how) => startReview(limit, byEar, how)}
           onPractice={() => setView("practice")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
+          progress={<ProgressBlock report={report} stats={{ phrases, pending }} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} stats={{ dueCount, phrases, pending }} canDraw={features.draw} lang={lang} />}
+      {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
       {view === "review" && mode === "learn" && (
         <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}

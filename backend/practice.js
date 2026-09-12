@@ -27,6 +27,21 @@ export function prepositionOf(term) {
 
 const ASKABLE_FORMS = Object.keys(FORM_LABELS);
 
+// «Мораша» учит глагол «поперёк»: одно лицо, но сразу во всех временах.
+// Лицо задаёт набор форм; настоящее время у «я» и «ты» — по роду Анны (ж.).
+// Порядок форм — порядок шагов: прошедшее → настоящее → будущее → повеление.
+export const PERSONS = [
+  { ru: "она", forms: ["PERF-3fs", "AP-fs", "IMPF-3fs"] },
+  { ru: "он", forms: ["PERF-3ms", "AP-ms", "IMPF-3ms"] },
+  { ru: "я", forms: ["PERF-1s", "AP-fs", "IMPF-1s"] },
+  { ru: "мы", forms: ["PERF-1p", "AP-mp", "IMPF-1p"] },
+  { ru: "ты (ж.)", forms: ["PERF-2fs", "AP-fs", "IMPF-2fs", "IMP-2fs"] },
+  { ru: "ты (м.)", forms: ["PERF-2ms", "AP-ms", "IMPF-2ms", "IMP-2ms"] },
+  { ru: "они", forms: ["PERF-3p", "AP-mp", "IMPF-3mp"] },
+  { ru: "вы", forms: ["PERF-2mp", "AP-mp", "IMPF-2mp", "IMP-2mp"] },
+];
+const MIN_CROSS = 2;
+
 function formsOf(word) {
   if (!word?.forms) return null;
   try {
@@ -60,8 +75,11 @@ function pick(list, rng) {
 
 // Вопрос — перевод + подпись формы; ответ — форма без огласовок, с огласовками
 // на показ. Слова последнего урока идут первыми, остальное — в случайном порядке.
-export function buildExercises(words, { limit = 10, rng = Math.random, recentLessonId = null, sentences = [] } = {}) {
-  const out = [];
+// Единица подхода — связка: глагол «поперёк» (2–4 шага), одиночная форма,
+// предлог или предложение. Связка не разрывается при перемешивании.
+export function buildExercises(words, { limit = 10, rng = Math.random, recentLessonId = null, sentences = [], missed = new Map() } = {}) {
+  const units = [];
+  const out = { push: (ex) => units.push([ex]) };
   // Предложения урока: русское → эталонный иврит. Ошибочные на сайте — первыми.
   for (const s of Array.isArray(sentences) ? sentences : []) {
     if (!s?.he || !s?.ru) continue;
@@ -86,6 +104,32 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
     const forms = formsOf(word);
     if (forms) {
       const ids = ASKABLE_FORMS.filter((id) => forms[id]?.bare);
+      const recent = word.lessonId != null && word.lessonId === recentLessonId;
+      const missedHere = missed instanceof Map ? missed.get(word.id) : null;
+      // Лицо: сначала то, где были промахи; иначе случайное среди тех, у кого
+      // хватает форм на связку.
+      const able = PERSONS.map((p) => ({ ...p, forms: p.forms.filter((id) => forms[id]?.bare) })).filter((p) => p.forms.length >= MIN_CROSS);
+      const hurt = missedHere ? able.filter((p) => p.forms.some((id) => missedHere.has(id))) : [];
+      const person = hurt.length > 0 ? pick(hurt, rng) : able.length > 0 ? pick(able, rng) : null;
+      if (person) {
+        const group = `cross:${word.id}`;
+        units.push(person.forms.map((formId, i) => ({
+          kind: "form",
+          wordId: word.id,
+          term: word.term,
+          prompt: meaning,
+          label: `${person.ru} · ${FORM_LABELS[formId].tense}`,
+          formId,
+          answer: forms[formId].bare,
+          answerVocalized: forms[formId].vocalized,
+          recent,
+          group,
+          person: person.ru,
+          step: i + 1,
+          steps: person.forms.length,
+        })));
+        continue;
+      }
       if (ids.length > 0) {
         const formId = pick(ids, rng);
         out.push({
@@ -119,21 +163,34 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
       });
     }
   }
-  // Сначала слова последнего урока, внутри групп — случайно.
-  const shuffled = out
-    .map((ex) => ({ ex, key: rng() }))
-    .sort((a, b) => Number(Boolean(b.ex.wrong)) - Number(Boolean(a.ex.wrong)) || Number(b.ex.recent) - Number(a.ex.recent) || a.key - b.key)
-    .map((x) => x.ex);
+  // Сначала слова последнего урока, внутри групп — случайно. Перемешиваются
+  // связки целиком: шаги «поперёк» остаются рядом.
+  const head = (u) => u[0];
+  const shuffled = units
+    .map((u) => ({ u, key: rng() }))
+    .sort((a, b) => Number(Boolean(head(b.u).wrong)) - Number(Boolean(head(a.u).wrong)) || Number(head(b.u).recent) - Number(head(a.u).recent) || a.key - b.key)
+    .map((x) => x.u);
   // Предложений после одного урока десятки, форм — единицы: без квоты формы
   // не попадались бы вовсе. Предложениям — не больше 60% подхода, остаток
   // добирается тем, что есть.
   const cap = Math.max(0, limit);
-  const sentencesFirst = shuffled.filter((e) => e.kind === "sentence");
-  const others = shuffled.filter((e) => e.kind !== "sentence");
-  const sentenceQuota = Math.min(sentencesFirst.length, Math.max(cap - others.length, Math.ceil(cap * 0.6)));
-  const chosen = [...sentencesFirst.slice(0, sentenceQuota), ...others.slice(0, cap - sentenceQuota)];
+  const sentencesFirst = shuffled.filter((u) => head(u).kind === "sentence");
+  const others = shuffled.filter((u) => head(u).kind !== "sentence");
+  const othersCount = others.reduce((n, u) => n + u.length, 0);
+  const sentenceQuota = Math.min(sentencesFirst.length, Math.max(cap - othersCount, Math.ceil(cap * 0.6)));
+  const take = (list, room) => {
+    const picked = [];
+    for (const u of list) {
+      if (room <= 0) break;
+      const part = u.slice(0, room);
+      picked.push(part);
+      room -= part.length;
+    }
+    return picked;
+  };
+  const chosen = [...take(sentencesFirst, sentenceQuota), ...take(others, cap - sentenceQuota)];
   return chosen
-    .map((ex) => ({ ex, key: rng() }))
-    .sort((a, b) => Number(Boolean(b.ex.wrong)) - Number(Boolean(a.ex.wrong)) || a.key - b.key)
-    .map((x) => x.ex);
+    .map((u) => ({ u, key: rng() }))
+    .sort((a, b) => Number(Boolean(head(b.u).wrong)) - Number(Boolean(head(a.u).wrong)) || a.key - b.key)
+    .flatMap((x) => x.u);
 }

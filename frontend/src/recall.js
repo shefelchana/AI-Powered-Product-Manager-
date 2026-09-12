@@ -135,3 +135,40 @@ export function choicesFor(word, pool, rng = Math.random) {
   const options = [...shuffled, correct].map((o) => ({ o, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.o);
   return { options, correct: options.indexOf(correct) };
 }
+
+// ---------- где именно разошлось (8.4) ----------
+//
+// Дислексия: ב/כ, ד/ר, ו/ז, ח/ת, ס/ם — промах здесь не незнание, а чтение.
+// Подсказка называет разницу словами и ничего не оценивает. Совсем другое
+// слово подсказки не получает: там нечего подсвечивать.
+const LOOKALIKES = [["ב", "כ"], ["ד", "ר"], ["ו", "ז"], ["ח", "ת"], ["ס", "ם"], ["ג", "נ"], ["ה", "ח"], ["י", "ו"], ["ע", "צ"], ["ט", "מ"]];
+const FINAL_OF = { "מ": "ם", "נ": "ן", "צ": "ץ", "פ": "ף", "כ": "ך" };
+const lookalike = (a, b) => LOOKALIKES.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+// В нормализованном виде конечных букв нет; для показа возвращаем конечную,
+// если буква стоит в конце слова.
+const shown = (letter, at, length) => (at === length - 1 && FINAL_OF[letter] ? FINAL_OF[letter] : letter);
+
+export function missHint(given, expected) {
+  const a = normalize(given);
+  const b = normalize(expected);
+  if (!a || !b || a === b) return null;
+  if (a.length === b.length) {
+    const diffs = [];
+    for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) diffs.push(i);
+    if (diffs.length <= 2 && diffs.every((i) => lookalike(shown(a[i], i, a.length), shown(b[i], i, b.length)))) {
+      return "похожие буквы: " + diffs.map((i) => `${shown(a[i], i, a.length)} вместо ${shown(b[i], i, b.length)}`).join(", ");
+    }
+    if ([...a].sort().join("") === [...b].sort().join("")) return "буквы переставлены местами";
+    return null;
+  }
+  if (Math.abs(a.length - b.length) === 1) {
+    const [short, long] = a.length < b.length ? [a, b] : [b, a];
+    for (let i = 0; i < long.length; i += 1) {
+      if (short === long.slice(0, i) + long.slice(i + 1)) {
+        const letter = shown(long[i], i, long.length);
+        return a.length < b.length ? `не хватает буквы: ${letter}` : `лишняя буква: ${letter}`;
+      }
+    }
+  }
+  return null;
+}
