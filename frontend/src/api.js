@@ -55,3 +55,4 @@ export const startLesson = () => request("/api/lessons", json("POST", {}));
 export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("PATCH", {}));
 export const previewLesson = (jsonText) => request("/api/import/lesson", json("POST", { json: jsonText }));
 export const applyLesson = (lesson, picks) => request("/api/import/lesson/apply", json("POST", { lesson, picks }));
+export const listLessons = () => request("/api/lessons");

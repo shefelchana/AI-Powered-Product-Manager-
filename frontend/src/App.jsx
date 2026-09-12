@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, startLesson, listWords, previewImport, previewLesson, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, applyLesson, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, previewImport, previewLesson, reviewWord, saveImage, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { matches, promptFor } from "./recall.js";
+import { lessonSummary, formatDate } from "./prep.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDue = (word) => word.nextDue <= todayISO();
@@ -595,6 +596,37 @@ function LessonImportBlock({ onAdded }) {
   );
 }
 
+// ---------- к уроку ----------
+
+// Накануне урока: слова прошлого урока целиком (не только просроченные),
+// без записи в расписание, и список «?» — что спросить.
+function PrepBlock({ words, lessons, onStart }) {
+  const { lesson, words: lessonWords, questions } = lessonSummary(words, lessons);
+  if (!lesson && questions.length === 0) return null;
+  return (
+    <div className="prep">
+      {lesson && (
+        <>
+          <p className="prep-head">К уроку · прошлый урок {formatDate(lesson.date)}{lesson.title ? ` · ${lesson.title}` : ""}</p>
+          <button className="secondary" type="button" disabled={lessonWords.length === 0} onClick={() => onStart(lessonWords)}>
+            Повторить урок ({lessonWords.length})
+          </button>
+        </>
+      )}
+      {questions.length > 0 && (
+        <>
+          <p className="muted" style={{ marginTop: "0.75rem" }}>Спросить на уроке:</p>
+          <ul>
+            {questions.map((w) => (
+              <li key={w.id}><span dir={dirOf(w.lang)}>{w.term}</span>{w.translation ? <span className="muted"> — {w.translation}</span> : null}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- повторение ----------
 
 // Строгий режим: сначала пишешь ответ, потом видишь правильный. Узнавание
@@ -750,7 +782,7 @@ function RevealCard({ word, onAnswer, listen }) {
   );
 }
 
-function ReviewScreen({ queue, onFinished, listen }) {
+function ReviewScreen({ queue, onFinished, listen, practice = false }) {
   const [cards, setCards] = useState(queue);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -759,7 +791,7 @@ function ReviewScreen({ queue, onFinished, listen }) {
   if (!word) {
     return (
       <div className="done">
-        <p className="done-title">На сегодня хватит</p>
+        <p className="done-title">{practice ? "Урок повторён" : "На сегодня хватит"}</p>
         <p className="muted">Повторено слов: {queue.length}</p>
         <button className="primary" onClick={onFinished}>Вернуться</button>
       </div>
@@ -769,7 +801,8 @@ function ReviewScreen({ queue, onFinished, listen }) {
   async function answer(known) {
     setError(null);
     try {
-      await reviewWord(word.id, known);
+      // Повторение к уроку коробки не трогает: это прогон, а не расписание.
+      if (!practice) await reviewWord(word.id, known);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -994,11 +1027,15 @@ export default function App() {
   const [lang, setLang] = useState("he");
   const [queue, setQueue] = useState([]);
   const [listen, setListen] = useState(false);
+  const [practice, setPractice] = useState(false);
+  const [lessons, setLessons] = useState([]);
   const [error, setError] = useState(null);
 
   const reload = useCallback(async () => {
     try {
-      setWords(await listWords());
+      const [words, lessons] = await Promise.all([listWords(), listLessons()]);
+      setWords(words);
+      setLessons(lessons);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -1029,10 +1066,20 @@ export default function App() {
     try {
       setQueue(await dueWords(limit, lang));
       setListen(byEar);
+      setPractice(false);
       setView("review");
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  // Накануне урока: все слова прошлого урока, не только просроченные,
+  // и без записи в расписание.
+  function startLessonReview(words) {
+    setQueue(words);
+    setListen(false);
+    setPractice(true);
+    setView("review");
   }
 
   return (
@@ -1094,6 +1141,8 @@ export default function App() {
         </button>
       )}
 
+      {view !== "review" && <PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
+
       {error && <p className="error">{error}</p>}
 
       {(showHelp || words.length === 0) && <Help lang={lang} />}
@@ -1105,6 +1154,7 @@ export default function App() {
         <ReviewScreen
           queue={queue}
           listen={listen}
+          practice={practice}
           onFinished={() => { setView("add"); reload(); }}
         />
       )}
