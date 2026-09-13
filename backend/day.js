@@ -45,3 +45,12 @@ export function pickWordOfDay(words, { lastLessonId = null, reviewedIds = new Se
   const repeat = (low.length > 0 ? low : pool).slice().sort((a, b) => String(a.dayPickedAt ?? "").localeCompare(String(b.dayPickedAt ?? "")) || byOldest(a, b));
   return { word: repeat[0], reason: REASONS.repeat };
 }
+
+// Причина для конкретного слова — то же правило, без выбора между словами.
+export function reasonFor(word, { lastLessonId = null, reviewedIds = new Set() }) {
+  const misses = Number(word.misses) || 0;
+  if (misses >= HARD_MISSES) return `не держится: ${misses} ${plural(misses)}`;
+  if (lastLessonId != null && word.lessonId === lastLessonId && !reviewedIds.has(word.id)) return REASONS.lesson;
+  if (!reviewedIds.has(word.id)) return REASONS.fresh;
+  return REASONS.repeat;
+}
