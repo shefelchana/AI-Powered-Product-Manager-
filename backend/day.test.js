@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickWordOfDay, REASONS } from "./day.js";
+import { pickWordOfDay, reasonFor, REASONS } from "./day.js";
 
 // Слово дня выбирается по видимому правилу (Анна, 12.09, вариант А):
 // не держится → с последнего урока, ещё не повторялось → новое → повторение.
@@ -51,4 +51,13 @@ test("склонение: 2 промаха, 5 промахов, 21 промах"
   assert.equal(pick(2), "не держится: 2 промаха");
   assert.equal(pick(5), "не держится: 5 промахов");
   assert.equal(pick(21), "не держится: 21 промах");
+});
+
+// Слово, выбранное до появления причин (или до деплоя), получает причину задним числом.
+test("reasonFor: причина для уже выбранного слова по тому же правилу", () => {
+  const ctx = { lastLessonId: 7, reviewedIds: new Set([2]) };
+  assert.equal(reasonFor(w(1, { misses: 3 }), ctx), "не держится: 3 промаха");
+  assert.equal(reasonFor(w(1, { lessonId: 7 }), ctx), REASONS.lesson);
+  assert.equal(reasonFor(w(1, { lessonId: 5 }), ctx), REASONS.fresh);
+  assert.equal(reasonFor(w(2, { box: 2 }), ctx), REASONS.repeat);
 });

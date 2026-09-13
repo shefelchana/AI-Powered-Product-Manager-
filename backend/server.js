@@ -11,7 +11,7 @@ import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-i
 import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
 import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
-import { pickWordOfDay } from "./day.js";
+import { pickWordOfDay, reasonFor } from "./day.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -260,17 +260,21 @@ app.patch("/api/words/:id/review", async (req, res) => {
 app.get("/api/word-of-day", async (req, res) => {
   const lang = langOf(req);
   const picked = await Word.findOne({ where: { dayPickedAt: today(), lang } });
-  if (picked) return res.json({ ...withoutImageBytes(picked), reason: picked.dayReason });
+  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  const reviewed = await ReviewAttempt.findAll({ attributes: ["wordId"], group: ["wordId"] });
+  const ctx = { lastLessonId: lastLesson?.id ?? null, reviewedIds: new Set(reviewed.map((r) => r.wordId)), today: today() };
+  if (picked) {
+    // Выбрано до того, как причины появились: дописываем задним числом.
+    if (!picked.dayReason) {
+      picked.dayReason = reasonFor(picked.toJSON(), ctx);
+      await picked.save();
+    }
+    return res.json({ ...withoutImageBytes(picked), reason: picked.dayReason });
+  }
 
   const words = await Word.findAll({ where: { lang } });
   if (words.length === 0) return res.json(null);
-  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
-  const reviewed = await ReviewAttempt.findAll({ attributes: ["wordId"], group: ["wordId"] });
-  const choice = pickWordOfDay(words.map((w) => w.toJSON()), {
-    lastLessonId: lastLesson?.id ?? null,
-    reviewedIds: new Set(reviewed.map((r) => r.wordId)),
-    today: today(),
-  });
+  const choice = pickWordOfDay(words.map((w) => w.toJSON()), ctx);
   const word = await Word.findByPk(choice.word.id);
   word.dayPickedAt = today();
   word.dayReason = choice.reason;
