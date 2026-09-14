@@ -42,6 +42,16 @@ test("вчерашнее слово дня не берётся два дня п�
   assert.equal(only.word.id, 1, "единственное слово всё равно берётся");
 });
 
+// Журнал ответов ведётся с 12.09; слово, дошедшее до второй коробки раньше, вспоминалось.
+test("слово с коробкой выше первой или с промахами не считается «новым», даже без записи в журнале", () => {
+  const ctx = { lastLessonId: 7, reviewedIds: new Set(), today: "2026-09-12" };
+  assert.equal(reasonFor(w(1, { box: 2 }), ctx), REASONS.repeat);
+  assert.equal(reasonFor(w(1, { box: 1, misses: 1, lessonId: 7 }), ctx), REASONS.repeat);
+  const r = pickWordOfDay([w(1, { box: 3 }), w(2, { box: 1 })], ctx);
+  assert.equal(r.word.id, 2);
+  assert.equal(r.reason, REASONS.fresh);
+});
+
 test("пустая колода — null", () => {
   assert.equal(pickWordOfDay([], { lastLessonId: null, reviewedIds: new Set(), today: "2026-09-12" }), null);
 });
