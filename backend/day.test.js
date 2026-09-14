@@ -71,3 +71,18 @@ test("reasonFor: причина для уже выбранного слова п
   assert.equal(reasonFor(w(1, { lessonId: 5 }), ctx), REASONS.fresh);
   assert.equal(reasonFor(w(2, { box: 2 }), ctx), REASONS.repeat);
 });
+
+// Промахи только растут: без ограничения два трудных слова чередовались бы вечно,
+// а слово вчерашнего урока не всплыло бы никогда. Трудное слово — не чаще раза в неделю.
+test("трудные слова не занимают слово дня навсегда: после показа уступают уроку на неделю", () => {
+  const words = [
+    w(1, { misses: 5, dayPickedAt: "2026-09-11" }),
+    w(2, { misses: 4, dayPickedAt: "2026-09-10" }),
+    w(3, { lessonId: 7 }),
+  ];
+  const r = pickWordOfDay(words, { lastLessonId: 7, reviewedIds: new Set([1, 2]), today: "2026-09-12" });
+  assert.equal(r.word.id, 3);
+  assert.equal(r.reason, REASONS.lesson);
+  const later = pickWordOfDay(words, { lastLessonId: 7, reviewedIds: new Set([1, 2, 3]), today: "2026-09-19" });
+  assert.equal(later.word.id, 1, "через неделю трудное слово снова в очереди");
+});

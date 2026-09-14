@@ -131,7 +131,13 @@ app.post("/api/words", async (req, res) => {
   // пустые и повторы пропускаются; ошибка одной фразы слово не роняет.
   const rawPhrases = Array.isArray(req.body?.examples) ? req.body.examples : String(req.body?.examples ?? "").split("\n");
   const phrases = [...new Set(rawPhrases.map((p) => String(p ?? "").trim()).filter(Boolean))].slice(0, 20);
-  for (const text of phrases) await addExampleTo(word, text);
+  for (const text of phrases) {
+    try {
+      await addExampleTo(word, text);
+    } catch (error) {
+      console.error("phrase skipped:", error.message);
+    }
+  }
   res.status(201).json(withoutImageBytes(await Word.findByPk(word.id)));
 });
 
@@ -244,6 +250,8 @@ app.patch("/api/words/:id", async (req, res) => {
 
 // Откуда пришёл ответ: режим повторения. Чужие значения не пишем.
 const REVIEW_MODES = new Set(["type", "choose", "learn", "listen", "reveal", "ahead"]);
+// Колонки для отчётов и выбора: без картинок (BLOB до 3 МБ) и фраз.
+const LIGHT = ["id", "term", "translation", "box", "misses", "lessonId", "dayPickedAt", "createdAt", "nextDue"];
 
 app.patch("/api/words/:id/review", async (req, res) => {
   if (typeof req.body?.known !== "boolean") {
@@ -253,10 +261,20 @@ app.patch("/api/words/:id/review", async (req, res) => {
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
 
   const boxBefore = word.box;
-  Object.assign(word, recordReview(word, req.body.known));
-  await word.save();
   const mode = REVIEW_MODES.has(req.body?.mode) ? req.body.mode : "";
-  await ReviewAttempt.create({ wordId: word.id, known: req.body.known, mode, boxBefore, boxAfter: word.box });
+  // Вне расписания «знаю» коробку не двигает — правило живёт здесь, не на клиенте.
+  // Промах засчитывается всегда: слово возвращается на сегодня.
+  const keepSchedule = mode === "ahead" && req.body.known;
+  if (!keepSchedule) {
+    Object.assign(word, recordReview(word, req.body.known));
+    await word.save();
+  }
+  // Журнал — не повод ронять ответ: без строки в журнале расписание всё равно верное.
+  try {
+    await ReviewAttempt.create({ wordId: word.id, known: req.body.known, mode, boxBefore, boxAfter: word.box });
+  } catch (error) {
+    console.error("review log:", error.message);
+  }
   res.json(withoutImageBytes(word));
 });
 
@@ -277,7 +295,7 @@ app.get("/api/word-of-day", async (req, res) => {
     return res.json({ ...withoutImageBytes(picked), reason: picked.dayReason });
   }
 
-  const words = await Word.findAll({ where: { lang } });
+  const words = await Word.unscoped().findAll({ where: { lang }, attributes: LIGHT });
   if (words.length === 0) return res.json(null);
   const choice = pickWordOfDay(words.map((w) => w.toJSON()), ctx);
   const word = await Word.findByPk(choice.word.id);
@@ -435,7 +453,7 @@ app.get("/api/lookup/:term", async (req, res) => {
   }
   // Четвёртый источник — преподаватель на уроке (lessonNote у слова в колоде).
   // Он по-русски, со словарями машинно не сравнивается: совет, не запрет.
-  const deckWord = await Word.findOne({ where: { term } });
+  const deckWord = await Word.findOne({ where: { term: bareTerm(term) } });
   const lesson = deckWord?.lessonNote ? { note: deckWord.lessonNote, lessonId: deckWord.lessonId ?? null } : null;
   if (lesson) verdict += ` · преподаватель на уроке: «${lesson.note}» — расхождение с преподавателем это совет посмотреть, не запрет`;
 
@@ -516,7 +534,8 @@ const looksLikeVerb = (word) => word.lang === "he" && /^ל[א-ת]{3,}$/.test(wor
 // Прогресс: стадии колоды, удержание, что не держится, по урокам, активность.
 app.get("/api/progress", async (req, res) => {
   const lang = langOf(req);
-  const words = await Word.findAll({ where: { lang } });
+  // Без картинок и фраз: отчёту нужны только счётчики, а BLOB'ы весят мегабайты.
+  const words = await Word.unscoped().findAll({ where: { lang }, attributes: LIGHT });
   const ids = words.map((w) => w.id);
   const attempts = ids.length ? await ReviewAttempt.findAll({ where: { wordId: { [Op.in]: ids } }, order: [["id", "ASC"]] }) : [];
   const practice = ids.length ? await PracticeAttempt.findAll({ where: { wordId: { [Op.in]: ids } } }) : [];
@@ -552,7 +571,7 @@ app.post("/api/practice/prepare", async (req, res) => {
 app.get("/api/practice", async (req, res) => {
   const lang = langOf(req);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 30);
-  const words = await Word.findAll({ where: { lang } });
+  const words = await Word.unscoped().findAll({ where: { lang }, attributes: [...LIGHT, "lang", "lessonNote", "definition", "definitionSource", "forms"] });
   const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
   const sentences = lang === "he" ? await Sentence.findAll({ order: [["lessonId", "DESC"], ["position", "ASC"]] }) : [];
   // Формы, где последняя попытка была промахом, тянут к себе лицо в «поперёк».

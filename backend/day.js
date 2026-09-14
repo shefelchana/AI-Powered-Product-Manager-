@@ -3,6 +3,9 @@
 // повторялось → новое → повторение из низких коробок. Вчерашнее не берём два дня
 // подряд. Чистая функция: маршрут только собирает входы и сохраняет выбор.
 const HARD_MISSES = 2;
+// Трудное слово — словом дня не чаще раза в неделю, иначе два самых трудных
+// чередовались бы вечно (промахи только растут).
+const HARD_COOLDOWN_DAYS = 7;
 
 export const REASONS = {
   lesson: "с последнего урока, ещё не повторялось",
@@ -36,7 +39,15 @@ export function pickWordOfDay(words, { lastLessonId = null, reviewedIds = new Se
   const fresh = all.filter((w) => w.dayPickedAt !== yesterday);
   const pool = fresh.length > 0 ? fresh : all;
 
-  const hard = pool.filter((w) => Number(w.misses) >= HARD_MISSES).sort((a, b) => Number(b.misses) - Number(a.misses) || byOldest(a, b));
+  const restUntil = (w) => {
+    if (!w.dayPickedAt) return "";
+    const d = new Date(`${w.dayPickedAt}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + HARD_COOLDOWN_DAYS);
+    return d.toISOString().slice(0, 10);
+  };
+  const hard = pool
+    .filter((w) => Number(w.misses) >= HARD_MISSES && restUntil(w) <= today)
+    .sort((a, b) => Number(b.misses) - Number(a.misses) || byOldest(a, b));
   if (hard.length > 0) return { word: hard[0], reason: `не держится: ${hard[0].misses} ${plural(Number(hard[0].misses))}` };
 
   const seen = seenBy(reviewedIds);

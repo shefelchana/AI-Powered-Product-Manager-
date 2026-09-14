@@ -172,3 +172,18 @@ test("0009: у слова есть dayReason, по умолчанию пусто
   await migrate(db);
   assert.ok((await db.getQueryInterface().describeTable("Words")).dayReason);
 });
+
+test("0010: огласовки снимаются с уже записанных слов; столкновение с голым написанием не трогается", async () => {
+  const db = await legacyDatabase();
+  const now = new Date();
+  await db.getQueryInterface().bulkInsert("Words", [
+    { term: "שָׁלוֹם", definition: "", definitionSource: "", translation: "мир", examples: "", lang: "he", box: 1, nextDue: "2026-09-12", createdAt: now, updatedAt: now },
+    { term: "מַס", definition: "", definitionSource: "", translation: "налог", examples: "", lang: "he", box: 1, nextDue: "2026-09-12", createdAt: now, updatedAt: now },
+    { term: "מס", definition: "", definitionSource: "", translation: "налог (голое)", examples: "", lang: "he", box: 2, nextDue: "2026-09-12", createdAt: now, updatedAt: now },
+  ]);
+  await migrate(db);
+  const [rows] = await db.query("SELECT term FROM Words ORDER BY id");
+  const terms = rows.map((r) => r.term);
+  assert.ok(terms.includes("שלום"), "огласовки сняты");
+  assert.ok(terms.includes("מַס") && terms.includes("מס"), "при столкновении оба ряда остаются как были");
+});
