@@ -187,7 +187,8 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
     const picked = [];
     for (const u of list) {
       if (room <= 0) break;
-      const part = u.slice(0, room);
+      // Обрезанная связка не обещает шагов, которых не будет.
+      const part = u.slice(0, room).map((ex) => (ex.group ? { ...ex, steps: Math.min(ex.steps, room) } : ex));
       picked.push(part);
       room -= part.length;
     }

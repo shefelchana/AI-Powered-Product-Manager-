@@ -527,7 +527,7 @@ function PracticeScreen({ lang, onFinished }) {
             <>
               <p className="muted">Ты написала:</p>
               <p className="typed" dir="rtl">{typed}</p>
-              {missHint(typed, ex.answer) && <p className="miss-hint">{missHint(typed, ex.answer)}</p>}
+              {(ex.kind === "form" || ex.kind === "preposition") && missHint(typed, ex.answer) && <p className="miss-hint">{missHint(typed, ex.answer)}</p>}
             </>
           )}
           <p className="review-term" dir="rtl">
@@ -562,8 +562,8 @@ function LearnScreen({ queue, pool, onFinished, ahead = false }) {
     (async () => {
       const { known, unknown } = roundSummary(round);
       try {
-        // Вне расписания «знаю» не записывается: коробка не двигается раньше срока.
-        if (!ahead) for (const id of known) await reviewWord(id, true, "learn");
+        // Вне расписания режим «ahead»: сервер пишет журнал, коробку на «знаю» не двигает.
+        for (const id of known) await reviewWord(id, true, ahead ? "ahead" : "learn");
         for (const id of unknown) await reviewWord(id, false, ahead ? "ahead" : "learn");
       } catch (e) {
         setError(e.message);
@@ -886,7 +886,8 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
     setError(null);
     try {
       // Повторение к уроку коробки не трогает: это прогон, а не расписание.
-      if (!practice && !(ahead && known)) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode);
+      // Вне расписания ответ тоже уходит: сервер пишет журнал и сам не двигает коробку на «знаю».
+      if (!practice) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -1174,7 +1175,9 @@ export default function App() {
 
   // Отчёт о прогрессе живёт на «Повторять»; вкладке «Слова» нужен только список выученных.
   useEffect(() => {
-    progress(lang).then(setReport).catch(() => setReport(null));
+    let ignore = false;
+    progress(lang).then((r) => { if (!ignore) setReport(r); }).catch(() => { if (!ignore) setReport(null); });
+    return () => { ignore = true; };
   }, [lang, words]);
   const counts = words.reduce((acc, word) => ({ ...acc, [word.lang]: (acc[word.lang] ?? 0) + 1 }), {});
   const otherLangs = Object.keys(LANGS).filter((code) => code !== lang && counts[code]);
@@ -1278,6 +1281,7 @@ export default function App() {
       )}
       {view === "review" && mode !== "learn" && (
         <ReviewScreen
+          key={queue.map((w) => w.id).join(",")}
           queue={queue}
           listen={listen}
           pool={mine}
