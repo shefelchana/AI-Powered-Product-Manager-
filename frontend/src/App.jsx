@@ -332,8 +332,8 @@ function formatLessonDate(iso) {
 
 function AddScreen({ onAdded }) {
   const [term, setTerm] = useState("");
-  const [definition, setDefinition] = useState("");
   const [translation, setTranslation] = useState("");
+  const [phrases, setPhrases] = useState("");
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const termInput = useRef(null);
@@ -344,11 +344,11 @@ function AddScreen({ onAdded }) {
     setSaving(true);
     setStatus(null);
     try {
-      const word = await addWord({ term, definition, translation });
+      const word = await addWord({ term, translation, examples: phrases });
       // Успех — и только успех — очищает поля.
       setTerm("");
-      setDefinition("");
       setTranslation("");
+      setPhrases("");
       setStatus({ kind: "ok", text: `«${word.term}» записано` });
       onAdded();
     } catch (error) {
@@ -377,16 +377,10 @@ function AddScreen({ onAdded }) {
         placeholder="מילה"
       />
 
+      {/* Объяснение на иврите здесь не нужно: его дают словари и преподаватель.
+          Что нужно от Анны — перевод и фразы, в которых слово встретилось (14.09). */}
       <details className="extra">
-        <summary>Добавить объяснение сразу</summary>
-        <label className="field-label" htmlFor="definition">Объяснение на иврите</label>
-        <textarea
-          id="definition"
-          dir="rtl"
-          rows={3}
-          value={definition}
-          onChange={(e) => setDefinition(e.target.value)}
-        />
+        <summary>Перевод и фразы</summary>
         <label className="field-label" htmlFor="translation">Перевод (необязательно)</label>
         <input
           id="translation"
@@ -394,6 +388,15 @@ function AddScreen({ onAdded }) {
           autoComplete="off"
           value={translation}
           onChange={(e) => setTranslation(e.target.value)}
+        />
+        <label className="field-label" htmlFor="phrases">Фразы с этим словом — каждая с новой строки</label>
+        <textarea
+          id="phrases"
+          dir="rtl"
+          rows={3}
+          value={phrases}
+          onChange={(e) => setPhrases(e.target.value)}
+          placeholder="משפט עם המילה"
         />
       </details>
 
