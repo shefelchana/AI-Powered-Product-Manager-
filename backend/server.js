@@ -127,7 +127,12 @@ app.post("/api/words", async (req, res) => {
     box: 1,
     nextDue: today(),
   });
-  res.status(201).json(withoutImageBytes(word));
+  // Фразы с этим словом — сразу при добавлении (Анна, 14.09): по строке на фразу,
+  // пустые и повторы пропускаются; ошибка одной фразы слово не роняет.
+  const rawPhrases = Array.isArray(req.body?.examples) ? req.body.examples : String(req.body?.examples ?? "").split("\n");
+  const phrases = [...new Set(rawPhrases.map((p) => String(p ?? "").trim()).filter(Boolean))].slice(0, 20);
+  for (const text of phrases) await addExampleTo(word, text);
+  res.status(201).json(withoutImageBytes(await Word.findByPk(word.id)));
 });
 
 // Предпросмотр импорта: из вставленного текста урока вылавливаются ивритские
