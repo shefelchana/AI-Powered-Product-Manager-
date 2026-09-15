@@ -591,8 +591,9 @@ app.get("/api/practice", async (req, res) => {
 
 // «Эхо»: предложения урока с аудио преподавателя для повторения вслух.
 app.get("/api/echo", async (req, res) => {
-  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
-  const sentences = await Sentence.findAll({ attributes: ["id", "he", "heVocalized", "ru", "audioUrl", "lessonId", "wrongCount"] });
+  // Только что импортированный урок ещё не «закончен» — но повторять хочется именно его.
+  const lastLesson = await Lesson.findOne({ order: [["date", "DESC"], ["id", "DESC"]] });
+  const sentences = await Sentence.findAll({ where: { audioUrl: { [Op.ne]: "" } }, attributes: ["id", "he", "heVocalized", "ru", "audioUrl", "lessonId", "wrongCount"] });
   res.json(pickEcho(sentences.map((x) => x.toJSON()), { limit: req.query.limit, recentLessonId: lastLesson?.id ?? null }));
 });
 

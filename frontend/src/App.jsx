@@ -3,7 +3,7 @@ import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, 
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { audioSrc, dictationStage } from "./listen.js";
-import { ECHO_START, echoReduce } from "./echo.js";
+import { ECHO_START, MAX_TAKE_SECONDS, echoReduce, micErrorKind, pickMimeType } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -586,81 +586,156 @@ function PracticeScreen({ lang, onFinished }) {
 
 // ---------- произношение: эхо за преподавателем ----------
 
-// Голос записывается в браузере и живёт до «Дальше»: на сервер не уходит.
+// Голос записывается в браузере и живёт до «Дальше» или выхода: на сервер не уходит.
+// Микрофон включается на время дубля и гаснет по «Стоп» — индикатор записи не горит весь подход.
 function EchoScreen({ onFinished }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [index, setIndex] = useState(0);
   const [echo, setEcho] = useState(ECHO_START);
   const [takeUrl, setTakeUrl] = useState("");
+  const [seconds, setSeconds] = useState(0);
   const recorder = useRef(null);
-  const stream = useRef(null);
+  const takeRef = useRef("");
+  const alive = useRef(true);
+  const starting = useRef(false);
   const dispatch = (action) => setEcho((prev) => echoReduce(prev, action));
 
+  function dropTake() {
+    if (takeRef.current) URL.revokeObjectURL(takeRef.current);
+    takeRef.current = "";
+    setTakeUrl("");
+  }
+  function killRecorder() {
+    const rec = recorder.current;
+    recorder.current = null;
+    if (rec) {
+      rec.onstop = null;
+      if (rec.state !== "inactive") { try { rec.stop(); } catch { /* уже остановлен */ } }
+      rec.stream.getTracks().forEach((t) => t.stop());
+    }
+  }
+
+  function load() {
+    setError(null); setItems(null);
+    echoSet(6).then((list) => { if (alive.current) setItems(list); }).catch((e) => { if (alive.current) { setError(e.message); setItems([]); } });
+  }
+
   useEffect(() => {
-    let alive = true;
-    echoSet(6).then((list) => { if (alive) setItems(list); }).catch((e) => { if (alive) { setError(e.message); setItems([]); } });
-    if (typeof window !== "undefined" && (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")) {
+    alive.current = true;
+    load();
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setEcho((prev) => echoReduce(prev, { type: "nomic", reason: "нужен https" }));
+    } else if (typeof window !== "undefined" && (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")) {
       setEcho((prev) => echoReduce(prev, { type: "nomic", reason: "браузер не умеет записывать" }));
     }
-    return () => { alive = false; stream.current?.getTracks().forEach((t) => t.stop()); };
+    return () => { alive.current = false; killRecorder(); if (takeRef.current) URL.revokeObjectURL(takeRef.current); takeRef.current = ""; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Секунды дубля и автостоп: забытая запись не идёт бесконечно.
+  useEffect(() => {
+    if (echo.stage !== "recording") { setSeconds(0); return undefined; }
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const passed = Math.floor((Date.now() - started) / 1000);
+      setSeconds(passed);
+      if (passed >= MAX_TAKE_SECONDS) stop();
+    }, 250);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [echo.stage]);
 
   const ex = items?.[index];
 
   async function record() {
+    if (starting.current || recorder.current?.state === "recording") return;
+    starting.current = true;
+    const forId = ex?.id;
+    let stream;
     try {
-      stream.current = stream.current ?? await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks = [];
-      const rec = new MediaRecorder(stream.current);
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-      rec.onstop = () => {
-        if (takeUrl) URL.revokeObjectURL(takeUrl);
-        setTakeUrl(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" })));
-        dispatch({ type: "stop" });
-      };
-      recorder.current = rec;
-      rec.start();
-      dispatch({ type: echo.stage === "compare" ? "again" : "record" });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      dispatch({ type: "nomic", reason: e?.name === "NotAllowedError" ? "доступ запрещён" : "не удалось включить" });
+      starting.current = false;
+      if (!alive.current) return;
+      const kind = micErrorKind(e);
+      dispatch({ type: kind.permanent ? "nomic" : "micfail", reason: kind.reason });
+      return;
     }
+    starting.current = false;
+    // Пока ждали разрешения, она ушла с экрана или нажала «Дальше» — не начинать.
+    if (!alive.current || ex?.id !== forId || recorder.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+    const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t));
+    let rec;
+    try {
+      rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      dispatch({ type: "micfail", reason: "формат записи не поддерживается" });
+      return;
+    }
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (recorder.current === rec) recorder.current = null;
+      if (!alive.current) return;
+      const blob = new Blob(chunks, { type: chunks[0]?.type || rec.mimeType || "audio/webm" });
+      if (chunks.length === 0 || blob.size === 0) { dispatch({ type: "empty" }); return; }
+      dropTake();
+      takeRef.current = URL.createObjectURL(blob);
+      setTakeUrl(takeRef.current);
+      dispatch({ type: "stop" });
+    };
+    recorder.current = rec;
+    rec.start();
+    setEcho((prev) => echoReduce(prev, { type: prev.stage === "compare" ? "again" : "record" }));
   }
 
   function stop() {
-    if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+    const rec = recorder.current;
+    if (rec && rec.state === "recording") rec.stop();
   }
 
   function next() {
-    if (takeUrl) URL.revokeObjectURL(takeUrl);
-    setTakeUrl("");
+    killRecorder();
+    dropTake();
     dispatch({ type: "next" });
-    setIndex(index + 1);
+    setIndex((i) => i + 1);
   }
 
   if (items === null) return <div className="review"><p className="muted">Собираю предложения с аудио…</p></div>;
+  if (error) {
+    return (
+      <div className="done">
+        <p className="done-title">Не получилось загрузить</p>
+        <p className="error">{error}</p>
+        <button className="primary" onClick={load}>Попробовать ещё раз</button>
+        <button className="quiet" onClick={onFinished}>Вернуться</button>
+      </div>
+    );
+  }
   if (!ex) {
     return (
       <div className="done">
         <p className="done-title">{items.length === 0 ? "Пока нечего повторять" : "Произношение отработано"}</p>
         <p className="muted">{items.length === 0 ? "Нужны предложения урока с аудио преподавателя (импорт с сайта ульпана)" : `Повторила: ${items.length}`}</p>
-        {error && <p className="error">{error}</p>}
         <button className="primary" onClick={onFinished}>Вернуться</button>
       </div>
     );
   }
 
-  const step = { listen: "1 · слушай и читай под звук", recording: "2 · говори — идёт запись", compare: "3 · сравни: преподаватель и ты" }[echo.stage];
+  const step = { listen: "1 · слушай и читай под звук", recording: `2 · говори — идёт запись, ${seconds} с`, compare: "3 · сравни: преподаватель и ты" }[echo.stage];
   return (
     <div className="review strict echo">
       <p className="review-head">
         <span className="muted">{index + 1} из {items.length}{ex.wrong ? " · была ошибка на сайте" : ""}</span>
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
-      <p className="prompt-label muted">{step}</p>
+      <p className="prompt-label muted" aria-live="polite">{step}</p>
       <p className="review-term echo-text" dir="rtl">{ex.heVocalized || ex.he}</p>
       <p className="muted" dir="ltr">{ex.ru}</p>
-      {echo.note && <p className="muted listen-hint">{echo.note}</p>}
+      {echo.note && <p className="muted listen-hint" aria-live="polite">{echo.note}</p>}
 
       {echo.stage === "listen" && (
         <div className="listen-stage">
@@ -671,7 +746,7 @@ function EchoScreen({ onFinished }) {
       )}
       {echo.stage === "recording" && (
         <div className="listen-stage">
-          <p className="recording-dot">● идёт запись — повтори предложение вслух</p>
+          <p className="recording-dot">● повтори предложение вслух (до {MAX_TAKE_SECONDS} с)</p>
           <button className="primary" type="button" onClick={stop}>⏹ Стоп</button>
         </div>
       )}

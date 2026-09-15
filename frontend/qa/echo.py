@@ -13,14 +13,17 @@ with sync_playwright() as p:
     # 1. Микрофон есть (фейковое устройство, разрешение выдаётся автоматически)
     b = p.chromium.launch(args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"])
     ctx = b.new_context(viewport={"width": 420, "height": 860}, permissions=["microphone"])
-    pg = ctx.new_page(); pg.add_init_script(FAKE_AUDIO); errors = []
+    pg = ctx.new_page(); pg.add_init_script(FAKE_AUDIO); errors = []; uploads = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
+    # Приватность: за весь подход со страницы не уходит ни одного POST/PUT (голос остаётся в браузере).
+    pg.on("request", lambda r: uploads.append((r.method, r.url)) if r.method in ("POST", "PUT", "PATCH") else None)
     open_echo(pg)
     print("step:", pg.locator(".prompt-label").inner_text(), "| head:", pg.locator(".review-head").inner_text().replace("\n", " "))
     assert pg.evaluate("(window.__plays||[]).length") == 1, "эталон не проиграл сам"
     pg.screenshot(path=f"{OUT}/echo-listen.png")
-    pg.get_by_role("button", name="Записать себя").click()
+    pg.get_by_role("button", name="Записать себя").dblclick()   # двойное нажатие — один рекордер, не два
     pg.locator(".prompt-label", has_text="запись").wait_for(timeout=8000)   # микрофон стартует не мгновенно
+    pg.wait_for_timeout(400)
     print("step:", pg.locator(".prompt-label").inner_text())
     pg.screenshot(path=f"{OUT}/echo-recording.png")
     pg.get_by_role("button", name="Стоп").click()
@@ -40,13 +43,23 @@ with sync_playwright() as p:
     pg.get_by_role("button", name="Дальше").click(); pg.wait_for_timeout(400)
     print("next:", pg.locator(".review-head").inner_text().replace("\n", " "), "|", pg.locator(".prompt-label").inner_text())
     assert "2 из" in pg.locator(".review-head").inner_text()
+    # Выход во время записи: рекордер и дорожки гасятся, ошибок нет
+    pg.get_by_role("button", name="Записать себя").click()
+    pg.locator(".prompt-label", has_text="запись").wait_for(timeout=8000)
+    pg.get_by_role("button", name="Выйти").click(); pg.wait_for_timeout(500)
+    assert pg.get_by_role("button", name="Произношение: повтори за преподавателем").count() == 1
+    print("uploads during session:", uploads)
+    assert uploads == [], "со страницы ушёл запрос с телом"
     print("pageerrors (mic):", errors)
+    assert errors == []
     b.close()
 
     # 2. Микрофон запрещён: остаёмся в «слушай», записи нет, «Дальше» работает
     b = p.chromium.launch()
-    ctx = b.new_context(viewport={"width": 420, "height": 860}); ctx.grant_permissions([])
+    ctx = b.new_context(viewport={"width": 420, "height": 860})
     pg = ctx.new_page(); pg.add_init_script(FAKE_AUDIO); errors = []
+    # Реальный отказ пользователя: NotAllowedError — микрофон выключается на весь подход
+    pg.add_init_script("navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));")
     pg.on("pageerror", lambda e: errors.append(str(e)))
     open_echo(pg)
     pg.get_by_role("button", name="Записать себя").click()

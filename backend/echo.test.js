@@ -31,3 +31,8 @@ test("мусор на входе — пустой список, не паден�
   assert.deepEqual(pickEcho(null, {}), []);
   assert.deepEqual(pickEcho([{ he: "", audioUrl: "x" }, null], {}), []);
 });
+
+test("больше ошибок на сайте — раньше в очереди", () => {
+  const list = pickEcho([s(1, "א", { wrongCount: 1 }), s(2, "ב", { wrongCount: 5 }), s(3, "ג")], { limit: 6 });
+  assert.deepEqual(list.map((x) => x.id), [2, 1, 3]);
+});

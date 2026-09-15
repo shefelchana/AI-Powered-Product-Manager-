@@ -9,7 +9,7 @@ export function pickEcho(sentences, { limit = 6, recentLessonId = null, rng = Ma
     .filter((s) => s && typeof s.he === "string" && s.he.trim() && s.audioUrl)
     .map((s) => ({ s, tie: rng() }));
   list.sort((a, b) =>
-    (Number(b.s.wrongCount ?? 0) > 0) - (Number(a.s.wrongCount ?? 0) > 0)
+    Number(b.s.wrongCount ?? 0) - Number(a.s.wrongCount ?? 0)
     || (b.s.lessonId === recentLessonId) - (a.s.lessonId === recentLessonId)
     || words(a.s.he) - words(b.s.he)
     || a.tie - b.tie);
