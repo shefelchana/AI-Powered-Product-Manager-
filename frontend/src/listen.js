@@ -17,3 +17,11 @@ export function dictationStage({ kind, writing = false, result = null, plays = 0
   if (audioFailed) return { listening: true, canWrite: true, stage: "failed", hint: "Звук не загрузился. Нажми ещё раз, напиши по памяти или пропусти" };
   return { listening: true, ...listenState(plays) };
 }
+
+// Адрес звука: файл с сайта ульпана лежит в их хранилище по имени; полные адреса
+// (https, а также blob:/data: — своя запись в браузере) не трогаем.
+export const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
+export function audioSrc(file) {
+  const f = String(file ?? "");
+  return /^(https?:|blob:|data:)/.test(f) ? f : SENTENCE_AUDIO + f;
+}

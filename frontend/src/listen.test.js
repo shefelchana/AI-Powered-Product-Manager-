@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dictationStage, listenState } from "./listen.js";
+import { audioSrc, dictationStage, listenState } from "./listen.js";
 
 // «Слушать до текста»: диктант начинается с прослушиваний без поля ввода.
 // Подсказка меняется по числу удавшихся воспроизведений; писать можно после первого.
@@ -59,4 +59,12 @@ test("звук не загрузился — не запираем: писать
   assert.equal(s.canWrite, true);
   assert.equal(s.stage, "failed");
   assert.match(s.hint, /не загрузился/);
+});
+
+// Пойманный баг 15.09: своя запись (blob:) получала префикс хранилища ульпана и не играла.
+test("адрес звука: имя файла — из хранилища ульпана, полные адреса и blob: — как есть", () => {
+  assert.equal(audioSrc("abc.mp3"), "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/abc.mp3");
+  assert.equal(audioSrc("https://x.test/a.mp3"), "https://x.test/a.mp3");
+  assert.equal(audioSrc("blob:http://localhost/123"), "blob:http://localhost/123");
+  assert.equal(audioSrc("data:audio/webm;base64,AAA"), "data:audio/webm;base64,AAA");
 });
