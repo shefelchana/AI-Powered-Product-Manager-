@@ -631,3 +631,8 @@ button {
 .echo .echo-text { font-size: 2rem; }
 .recording-dot { color: #ff6b6b; font-weight: 600; margin: 0.5rem 0; }
 .echo .review-menu-row .listen-big { margin: 0; }
+
+/* Шаг на сегодня — над словом дня */
+.today { border: 1px solid #2b2f37; border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1.25rem; }
+.today-title { font-size: 1.25rem; font-weight: 600; margin: 0.2rem 0 0.3rem; }
+.today .primary { margin-top: 0.5rem; }

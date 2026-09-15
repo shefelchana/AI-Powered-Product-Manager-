@@ -5,6 +5,7 @@ import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { audioSrc, dictationStage } from "./listen.js";
 import { ECHO_START, MAX_TAKE_SECONDS, echoReduce, micErrorKind, pickMimeType } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
+import { todayInIsrael, todayStep } from "./plan.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
 // Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
@@ -213,7 +214,21 @@ function Help({ lang, db }) {
 
 // Одно слово на день, с которым живёшь: прикладываешь его к своим ситуациям,
 // пока оно не побывает в десятке разных контекстов.
-function DayScreen({ lang, onChanged }) {
+// Один шаг на сегодня (Анна, 15.09: только «сегодня», без плана на неделю).
+function TodayBlock({ step, onGo }) {
+  if (!step) return null;
+  return (
+    <div className="today">
+      <p className="field-label">Сегодня</p>
+      <p className="today-title">{step.title}</p>
+      <p className="muted small">{step.hint}</p>
+      <button className="primary" type="button" onClick={() => onGo(step.action)}>{step.button}</button>
+      {step.then && <p className="muted small">потом — {step.then.short}</p>}
+    </div>
+  );
+}
+
+function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
   const [word, setWord] = useState(undefined);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(null);
@@ -251,6 +266,7 @@ function DayScreen({ lang, onChanged }) {
 
   return (
     <div className="day">
+      <TodayBlock step={step} onGo={onGo} />
       <p className="field-label">Слово дня</p>
       {/* Почему именно это слово — правило видно, а не спрятано (Анна, 12.09). */}
       {word.reason && <p className="day-reason">{word.reason}</p>}
@@ -1503,7 +1519,19 @@ export default function App() {
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
       {view === "echo" && <EchoScreen onFinished={() => setView("reviewmenu")} />}
-      {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
+      {view === "day" && (
+        <DayScreen
+          lang={lang}
+          onChanged={reload}
+          step={lang === "he" ? todayStep({ dueCount, lessonDate: lessonSummary(mine, lessons).lesson?.date ?? null, today: todayInIsrael(), lessonWords: lessonSummary(mine, lessons).words.length }) : null}
+          onGo={(action) => {
+            if (action !== "prep") { setView(action); return; }
+            const words = lessonSummary(mine, lessons).words;
+            // Слова урока могли исчезнуть между отрисовкой и нажатием — не молчать, а открыть «Фразы».
+            if (words.length === 0) setView("practice"); else startLessonReview(words);
+          }}
+        />
+      )}
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
       {view === "review" && mode === "learn" && (
