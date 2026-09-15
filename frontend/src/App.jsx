@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
+import { listenState } from "./listen.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -417,20 +418,23 @@ function AddScreen({ onAdded }) {
 
 // Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
 const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
-function AudioButton({ file, big = false, autoPlay = false }) {
+function AudioButton({ file, big = false, autoPlay = false, onPlayed = null, label = "🔊 Послушать ещё раз" }) {
   const src = /^https?:/.test(file) ? file : SENTENCE_AUDIO + file;
+  // onPlayed — только когда звук действительно пошёл: autoplay браузер может заблокировать.
+  const play = () => new Audio(src).play().then(() => onPlayed?.()).catch(() => {});
   useEffect(() => {
-    if (autoPlay) new Audio(src).play().catch(() => {});
+    if (autoPlay) play();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, autoPlay]);
   if (big) {
     return (
-      <button className="secondary listen-big" type="button" onClick={() => new Audio(src).play().catch(() => {})}>
-        🔊 Послушать ещё раз
+      <button className="secondary listen-big" type="button" onClick={play}>
+        {label}
       </button>
     );
   }
   return (
-    <button className="listen-again" type="button" onClick={() => new Audio(src).play().catch(() => {})} aria-label="Прослушать">
+    <button className="listen-again" type="button" onClick={play} aria-label="Прослушать">
       🔊
     </button>
   );
@@ -465,6 +469,11 @@ function PracticeScreen({ lang, onFinished }) {
   }, [lang]);
 
   const ex = items?.[index];
+  // «Слушать до текста»: диктант начинается с прослушиваний без поля ввода.
+  const [plays, setPlays] = useState(0);
+  const [writing, setWriting] = useState(false);
+  const listening = ex?.kind === "dictation" && !writing && result === null;
+  const listen = listenState(plays);
 
   async function check(event) {
     event.preventDefault();
@@ -476,6 +485,8 @@ function PracticeScreen({ lang, onFinished }) {
   function next() {
     setTyped("");
     setResult(null);
+    setPlays(0);
+    setWriting(false);
     setIndex(index + 1);
   }
 
@@ -499,16 +510,28 @@ function PracticeScreen({ lang, onFinished }) {
       </p>
       {note && <p className="muted">{note}</p>}
       <p className="prompt-label muted">
-        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", dictation: "на слух: послушай и напиши на иврите" }[ex.kind]}
+        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", dictation: listening ? "на слух: сначала просто послушай" : "на слух: напиши, что услышала" }[ex.kind]}
       </p>
       {ex.kind === "dictation" ? (
-        result === null && <AudioButton key={ex.sentenceId} file={ex.audioUrl} big autoPlay />
+        result === null && (
+          <div className="listen-stage">
+            <AudioButton key={ex.sentenceId} file={ex.audioUrl} big autoPlay onPlayed={() => setPlays((n) => n + 1)} label={plays === 0 ? "🔊 Послушать" : "🔊 Послушать ещё раз"} />
+            {listening && (
+              <>
+                <p className="muted listen-count">прослушано: {plays}</p>
+                <p className="listen-hint">{listen.hint}</p>
+                {listen.canWrite && <button className="primary" type="button" onClick={() => setWriting(true)}>Написать</button>}
+                <button className="quiet" type="button" onClick={() => setResult("gaveup")}>Не разобрала</button>
+              </>
+            )}
+          </div>
+        )
       ) : (
         <p className="cloze" dir="ltr">{ex.prompt}</p>
       )}
       {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="form-label" dir="ltr">{ex.label}</p>}
 
-      {result === null && (
+      {result === null && !listening && (
         <form onSubmit={check}>
           {ex.kind === "sentence" || ex.kind === "dictation" ? (
             <textarea className="term-input sentence-input" dir="rtl" autoFocus rows={3} value={typed} onChange={(e) => setTyped(e.target.value)} />
@@ -516,7 +539,7 @@ function PracticeScreen({ lang, onFinished }) {
             <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
           )}
           <button className="primary" type="submit">Проверить</button>
-          <button className="quiet" type="button" onClick={() => setResult("gaveup")}>Не помню</button>
+          <button className="quiet" type="button" onClick={() => setResult("gaveup")}>{ex.kind === "dictation" ? "Не разобрала" : "Не помню"}</button>
         </form>
       )}
 
@@ -532,9 +555,10 @@ function PracticeScreen({ lang, onFinished }) {
           )}
           <p className="review-term" dir="rtl">
             {ex.answerVocalized || ex.answer}{" "}
-            {ex.audioUrl ? <AudioButton file={ex.audioUrl} /> : <SpeakButton text={ex.answer} lang="he" />}
+            {ex.audioUrl ? <AudioButton file={ex.audioUrl} autoPlay={ex.kind === "dictation"} /> : <SpeakButton text={ex.answer} lang="he" />}
           </p>
           {ex.kind === "dictation" && <p className="muted" dir="ltr">{ex.translation}</p>}
+          {ex.kind === "dictation" && <p className="muted listen-hint" dir="ltr">читай глазами под звук — так слово «сшивается» со звучанием</p>}
           {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="muted">{ex.term} · {ex.label}</p>}
           <button className="primary" onClick={next}>Дальше</button>
         </div>
