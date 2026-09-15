@@ -5,7 +5,7 @@ import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { audioSrc, dictationStage } from "./listen.js";
 import { ECHO_START, MAX_TAKE_SECONDS, echoReduce, micErrorKind, pickMimeType } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
-import { todayStep } from "./plan.js";
+import { todayInIsrael, todayStep } from "./plan.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
 // Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
@@ -222,8 +222,8 @@ function TodayBlock({ step, onGo }) {
       <p className="field-label">Сегодня</p>
       <p className="today-title">{step.title}</p>
       <p className="muted small">{step.hint}</p>
-      <button className="primary" type="button" onClick={() => onGo(step.action)}>Начать</button>
-      {step.then && <p className="muted small">потом — {step.then.title.toLowerCase()}</p>}
+      <button className="primary" type="button" onClick={() => onGo(step.action)}>{step.button}</button>
+      {step.then && <p className="muted small">потом — {step.then.short}</p>}
     </div>
   );
 }
@@ -1523,10 +1523,12 @@ export default function App() {
         <DayScreen
           lang={lang}
           onChanged={reload}
-          step={todayStep({ dueCount, lessons, today: todayISO(), lessonWords: lessonSummary(mine, lessons).words.length })}
+          step={lang === "he" ? todayStep({ dueCount, lessonDate: lessonSummary(mine, lessons).lesson?.date ?? null, today: todayInIsrael(), lessonWords: lessonSummary(mine, lessons).words.length }) : null}
           onGo={(action) => {
-            if (action === "prep") startLessonReview(lessonSummary(mine, lessons).words);
-            else setView(action);
+            if (action !== "prep") { setView(action); return; }
+            const words = lessonSummary(mine, lessons).words;
+            // Слова урока могли исчезнуть между отрисовкой и нажатием — не молчать, а открыть «Фразы».
+            if (words.length === 0) setView("practice"); else startLessonReview(words);
           }}
         />
       )}
