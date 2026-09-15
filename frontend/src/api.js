@@ -58,3 +58,4 @@ export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${l
 export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
 export const recordAttempt = (wordId, formId, ok, sentenceId = null) => request("/api/practice/attempts", json("POST", { wordId, formId, ok, sentenceId }));
 export const progress = (lang) => request(`/api/progress?lang=${lang}`);
+export const echoSet = (limit) => request(`/api/echo?limit=${limit}`);

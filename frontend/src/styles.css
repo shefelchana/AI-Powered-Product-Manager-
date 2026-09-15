@@ -626,3 +626,8 @@ button {
 .listen-hint { margin: 0 0 0.5rem; font-size: 1.05rem; }
 /* Та же кнопка внутри строки ответа — компактная, не ломает строку с ивритом */
 .review-term .listen-again { font-size: 1.4rem; padding: 0.25rem 0.6rem; vertical-align: middle; }
+
+/* «Эхо»: произношение за преподавателем */
+.echo .echo-text { font-size: 2rem; }
+.recording-dot { color: #ff6b6b; font-weight: 600; margin: 0.5rem 0; }
+.echo .review-menu-row .listen-big { margin: 0; }

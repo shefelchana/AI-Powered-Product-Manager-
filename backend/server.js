@@ -12,6 +12,7 @@ import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
 import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
 import { pickWordOfDay, reasonFor } from "./day.js";
+import { pickEcho } from "./echo.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -586,6 +587,13 @@ app.get("/api/practice", async (req, res) => {
     missed.get(a.wordId).add(a.formId);
   }
   res.json(buildExercises(words, { limit, recentLessonId: lastLesson?.id ?? null, sentences, missed }));
+});
+
+// «Эхо»: предложения урока с аудио преподавателя для повторения вслух.
+app.get("/api/echo", async (req, res) => {
+  const lastLesson = await Lesson.findOne({ where: { finishedAt: { [Op.ne]: null } }, order: [["date", "DESC"], ["id", "DESC"]] });
+  const sentences = await Sentence.findAll({ attributes: ["id", "he", "heVocalized", "ru", "audioUrl", "lessonId", "wrongCount"] });
+  res.json(pickEcho(sentences.map((x) => x.toJSON()), { limit: req.query.limit, recentLessonId: lastLesson?.id ?? null }));
 });
 
 app.post("/api/practice/attempts", async (req, res) => {

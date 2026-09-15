@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, echoSet, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
-import { dictationStage } from "./listen.js";
+import { audioSrc, dictationStage } from "./listen.js";
+import { ECHO_START, echoReduce } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -416,8 +417,7 @@ function AddScreen({ onAdded }) {
 // ---------- импорт разбора урока ----------
 
 
-// Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
-const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
+// Аудио преподавателя с сайта ульпана: файл лежит в их хранилище (адрес — audioSrc в listen.js).
 // Один играющий звук на кнопку: новый запуск глушит предыдущий, а обещание старого
 // play() не считается — иначе медленно грузящееся аудио «прослушивалось» бы уже на
 // следующем предложении (и StrictMode в dev не удваивал бы счётчик).
@@ -431,7 +431,7 @@ function startAudio(src, slot, onPlayed, onFailed) {
 }
 
 function AudioButton({ file, big = false, autoPlay = false, onPlayed = null, onFailed = null, label = "🔊 Послушать ещё раз" }) {
-  const src = /^https?:/.test(file) ? file : SENTENCE_AUDIO + file;
+  const src = audioSrc(file);
   const slot = useRef(null);
   // Колбэки через ref: эффект зависит только от src/autoPlay, но зовёт свежие обработчики.
   const handlers = useRef({ onPlayed, onFailed });
@@ -584,6 +584,111 @@ function PracticeScreen({ lang, onFinished }) {
   );
 }
 
+// ---------- произношение: эхо за преподавателем ----------
+
+// Голос записывается в браузере и живёт до «Дальше»: на сервер не уходит.
+function EchoScreen({ onFinished }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [index, setIndex] = useState(0);
+  const [echo, setEcho] = useState(ECHO_START);
+  const [takeUrl, setTakeUrl] = useState("");
+  const recorder = useRef(null);
+  const stream = useRef(null);
+  const dispatch = (action) => setEcho((prev) => echoReduce(prev, action));
+
+  useEffect(() => {
+    let alive = true;
+    echoSet(6).then((list) => { if (alive) setItems(list); }).catch((e) => { if (alive) { setError(e.message); setItems([]); } });
+    if (typeof window !== "undefined" && (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")) {
+      setEcho((prev) => echoReduce(prev, { type: "nomic", reason: "браузер не умеет записывать" }));
+    }
+    return () => { alive = false; stream.current?.getTracks().forEach((t) => t.stop()); };
+  }, []);
+
+  const ex = items?.[index];
+
+  async function record() {
+    try {
+      stream.current = stream.current ?? await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const rec = new MediaRecorder(stream.current);
+      rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      rec.onstop = () => {
+        if (takeUrl) URL.revokeObjectURL(takeUrl);
+        setTakeUrl(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" })));
+        dispatch({ type: "stop" });
+      };
+      recorder.current = rec;
+      rec.start();
+      dispatch({ type: echo.stage === "compare" ? "again" : "record" });
+    } catch (e) {
+      dispatch({ type: "nomic", reason: e?.name === "NotAllowedError" ? "доступ запрещён" : "не удалось включить" });
+    }
+  }
+
+  function stop() {
+    if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+  }
+
+  function next() {
+    if (takeUrl) URL.revokeObjectURL(takeUrl);
+    setTakeUrl("");
+    dispatch({ type: "next" });
+    setIndex(index + 1);
+  }
+
+  if (items === null) return <div className="review"><p className="muted">Собираю предложения с аудио…</p></div>;
+  if (!ex) {
+    return (
+      <div className="done">
+        <p className="done-title">{items.length === 0 ? "Пока нечего повторять" : "Произношение отработано"}</p>
+        <p className="muted">{items.length === 0 ? "Нужны предложения урока с аудио преподавателя (импорт с сайта ульпана)" : `Повторила: ${items.length}`}</p>
+        {error && <p className="error">{error}</p>}
+        <button className="primary" onClick={onFinished}>Вернуться</button>
+      </div>
+    );
+  }
+
+  const step = { listen: "1 · слушай и читай под звук", recording: "2 · говори — идёт запись", compare: "3 · сравни: преподаватель и ты" }[echo.stage];
+  return (
+    <div className="review strict echo">
+      <p className="review-head">
+        <span className="muted">{index + 1} из {items.length}{ex.wrong ? " · была ошибка на сайте" : ""}</span>
+        <button className="exit" onClick={onFinished}>Выйти</button>
+      </p>
+      <p className="prompt-label muted">{step}</p>
+      <p className="review-term echo-text" dir="rtl">{ex.heVocalized || ex.he}</p>
+      <p className="muted" dir="ltr">{ex.ru}</p>
+      {echo.note && <p className="muted listen-hint">{echo.note}</p>}
+
+      {echo.stage === "listen" && (
+        <div className="listen-stage">
+          <AudioButton key={ex.id} file={ex.audioUrl} big autoPlay label="🔊 Преподаватель" />
+          {echo.mic && <button className="primary" type="button" onClick={record}>⏺ Записать себя</button>}
+          <button className="quiet" type="button" onClick={next}>Дальше</button>
+        </div>
+      )}
+      {echo.stage === "recording" && (
+        <div className="listen-stage">
+          <p className="recording-dot">● идёт запись — повтори предложение вслух</p>
+          <button className="primary" type="button" onClick={stop}>⏹ Стоп</button>
+        </div>
+      )}
+      {echo.stage === "compare" && (
+        <div className="listen-stage">
+          <div className="review-menu-row">
+            <AudioButton file={ex.audioUrl} big label="🔊 Преподаватель" />
+            <AudioButton file={takeUrl} big label={`🔊 Я${echo.takes > 1 ? ` · дубль ${echo.takes}` : ""}`} />
+          </div>
+          <button className="secondary" type="button" onClick={record}>⏺ Записать ещё раз</button>
+          <button className="primary" type="button" onClick={next}>Дальше</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- учить: раунд как в Quizlet Learn ----------
 
 // Слово сначала узнаётся (выбор из четырёх), потом вспоминается (написание).
@@ -654,7 +759,7 @@ function LearnScreen({ queue, pool, onFinished, ahead = false }) {
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
 // экраном и на телефоне отодвигали поле ввода на второй экран.
-function ReviewMenu({ dueCount, onReview, onAhead, onPractice, prep, progress }) {
+function ReviewMenu({ dueCount, onReview, onAhead, onPractice, onEcho, prep, progress }) {
   return (
     <div className="review-menu">
       {dueCount === 0 ? (
@@ -681,6 +786,9 @@ function ReviewMenu({ dueCount, onReview, onAhead, onPractice, prep, progress })
       <div className="review-menu-row">
         {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "learn")}>Нет сил — только 3</button>}
         <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
+      </div>
+      <div className="review-menu-row">
+        <button className="secondary" onClick={onEcho}>Произношение: повтори за преподавателем</button>
       </div>
       {prep}
       {progress}
@@ -1309,11 +1417,13 @@ export default function App() {
           onReview={(limit, byEar, how) => startReview(limit, byEar, how)}
           onAhead={(limit, how) => startReview(limit, false, how, true)}
           onPractice={() => setView("practice")}
+          onEcho={() => setView("echo")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
           progress={<ProgressBlock report={report} stats={{ phrases, pending }} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
+      {view === "echo" && <EchoScreen onFinished={() => setView("reviewmenu")} />}
       {view === "day" && <DayScreen lang={lang} onChanged={reload} />}
       {view === "add" && <AddScreen onAdded={reload} />}
       {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
