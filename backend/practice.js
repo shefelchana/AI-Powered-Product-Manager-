@@ -42,7 +42,7 @@ export const PERSONS = [
   { ru: "вы", forms: ["PERF-2mp", "AP-mp", "IMPF-2mp", "IMP-2mp"] },
 ];
 const MIN_CROSS = 2;
-const NEGATION_SHARE = 0.4;
+const NEGATION_SHARE = 0.7;
 
 function formsOf(word) {
   if (!word?.forms) return null;
@@ -90,12 +90,13 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
     // Предложение с «לא»/«אין» иногда идёт как «сделай отрицание»: показываем
     // утвердительную версию, эталон — оригинал преподавателя. Одно предложение —
     // одна единица в подходе, так что это вместо, а не вдобавок.
-    const negation = negationExercises([s], { recentLessonId })[0];
+    // Сначала жребий диктанта (доля «на слух» не должна падать из-за отрицаний), потом — отрицания.
+    const dictation = Boolean(s.audioUrl) && rng() < 0.5;
+    const negation = dictation ? null : negationExercises([s], { recentLessonId })[0];
     if (negation && rng() < NEGATION_SHARE) {
       out.push(negation);
       continue;
     }
-    const dictation = Boolean(s.audioUrl) && rng() < 0.5;
     out.push({
       kind: dictation ? "dictation" : "sentence",
       wordId: null,

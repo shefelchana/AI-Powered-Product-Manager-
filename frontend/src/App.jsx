@@ -529,8 +529,8 @@ function PracticeScreen({ lang, onFinished }) {
         <button className="exit" onClick={onFinished}>Выйти</button>
       </p>
       {note && <p className="muted">{note}</p>}
-      <p className="prompt-label muted">
-        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", negation: "сделай отрицание: перепиши предложение с «לא» или «אין»", dictation: listening ? "на слух: сначала просто послушай" : "на слух: напиши, что услышала" }[ex.kind]}
+      <p className="prompt-label muted" dir="ltr">
+        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", negation: `сделай отрицание: ${ex.hint || "добавь «לא»"}`, dictation: listening ? "на слух: сначала просто послушай" : "на слух: напиши, что услышала" }[ex.kind]}
       </p>
       {ex.kind === "dictation" ? (
         result === null && (
@@ -549,7 +549,7 @@ function PracticeScreen({ lang, onFinished }) {
       ) : (
         <p className="cloze" dir={ex.kind === "negation" ? "rtl" : "ltr"}>{ex.prompt}</p>
       )}
-      {ex.kind === "negation" && <p className="muted" dir="ltr">{ex.translation}</p>}
+      {ex.kind === "negation" && <p className="muted" dir="ltr">нужно получить: {ex.translation}</p>}
       {!SENTENCE_KINDS.has(ex.kind) && <p className="form-label" dir="ltr">{ex.label}</p>}
 
       {result === null && !listening && (

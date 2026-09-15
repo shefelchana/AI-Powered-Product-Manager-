@@ -151,7 +151,7 @@ test("диктанты считаются предложениями в квот
 });
 
 test("предложение с «לא» иногда идёт как «сделай отрицание» — вместо предложения, не вдобавок", () => {
-  const withNot = [{ id: 1, he: "הוא לא יכול להפר את החוזה.", ru: "Он не может нарушить договор.", audioUrl: "a.mp3", lessonId: 7, wrongCount: 0 }];
+  const withNot = [{ id: 1, he: "הוא לא יכול להפר את החוזה.", ru: "Он не может нарушить договор.", audioUrl: "", lessonId: 7, wrongCount: 0 }];
   const neg = buildExercises([], { limit: 5, rng: () => 0.2, sentences: withNot });
   assert.equal(neg.length, 1);
   assert.equal(neg[0].kind, "negation");
@@ -162,6 +162,9 @@ test("предложение с «לא» иногда идёт как «сдел
   const plain = buildExercises([], { limit: 5, rng: () => 0.9, sentences: withNot });
   assert.equal(plain.length, 1);
   assert.equal(plain[0].kind, "sentence");
+  // С аудио жребий диктанта идёт первым: доля «на слух» не падает из-за отрицаний.
+  const heard = buildExercises([], { limit: 5, rng: () => 0.2, sentences: [{ ...withNot[0], audioUrl: "a.mp3" }] });
+  assert.equal(heard[0].kind, "dictation");
   // Без отрицания в предложении — упражнения «отрицание» нет при любом rng.
   const none = buildExercises([], { limit: 5, rng: () => 0.2, sentences: [{ ...withNot[0], he: "הוא יכול להפר את החוזה." }] });
   assert.notEqual(none[0].kind, "negation");
