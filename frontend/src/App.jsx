@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
-import { listenState } from "./listen.js";
+import { dictationStage } from "./listen.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -418,13 +418,28 @@ function AddScreen({ onAdded }) {
 
 // Аудио преподавателя с сайта ульпана: файл лежит в их хранилище, играем по адресу.
 const SENTENCE_AUDIO = "https://hebreway-hadash.s3.eu-central-1.amazonaws.com/sentences-audio/";
-function AudioButton({ file, big = false, autoPlay = false, onPlayed = null, label = "🔊 Послушать ещё раз" }) {
+// Один играющий звук на кнопку: новый запуск глушит предыдущий, а обещание старого
+// play() не считается — иначе медленно грузящееся аудио «прослушивалось» бы уже на
+// следующем предложении (и StrictMode в dev не удваивал бы счётчик).
+function startAudio(src, slot, onPlayed, onFailed) {
+  slot.current?.pause();
+  const audio = new Audio(src);
+  slot.current = audio;
+  audio.play()
+    .then(() => { if (slot.current === audio) onPlayed(); })
+    .catch(() => { if (slot.current === audio) onFailed(); });
+}
+
+function AudioButton({ file, big = false, autoPlay = false, onPlayed = null, onFailed = null, label = "🔊 Послушать ещё раз" }) {
   const src = /^https?:/.test(file) ? file : SENTENCE_AUDIO + file;
-  // onPlayed — только когда звук действительно пошёл: autoplay браузер может заблокировать.
-  const play = () => new Audio(src).play().then(() => onPlayed?.()).catch(() => {});
+  const slot = useRef(null);
+  // Колбэки через ref: эффект зависит только от src/autoPlay, но зовёт свежие обработчики.
+  const handlers = useRef({ onPlayed, onFailed });
+  handlers.current = { onPlayed, onFailed };
+  const play = () => startAudio(src, slot, () => handlers.current.onPlayed?.(), () => handlers.current.onFailed?.());
   useEffect(() => {
-    if (autoPlay) play();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (autoPlay) startAudio(src, slot, () => handlers.current.onPlayed?.(), () => handlers.current.onFailed?.());
+    return () => { slot.current?.pause(); slot.current = null; };
   }, [src, autoPlay]);
   if (big) {
     return (
@@ -472,8 +487,9 @@ function PracticeScreen({ lang, onFinished }) {
   // «Слушать до текста»: диктант начинается с прослушиваний без поля ввода.
   const [plays, setPlays] = useState(0);
   const [writing, setWriting] = useState(false);
-  const listening = ex?.kind === "dictation" && !writing && result === null;
-  const listen = listenState(plays);
+  const [audioFailed, setAudioFailed] = useState(false);
+  const listen = dictationStage({ kind: ex?.kind, writing, result, plays, audioFailed });
+  const listening = listen.listening;
 
   async function check(event) {
     event.preventDefault();
@@ -487,6 +503,7 @@ function PracticeScreen({ lang, onFinished }) {
     setResult(null);
     setPlays(0);
     setWriting(false);
+    setAudioFailed(false);
     setIndex(index + 1);
   }
 
@@ -515,11 +532,11 @@ function PracticeScreen({ lang, onFinished }) {
       {ex.kind === "dictation" ? (
         result === null && (
           <div className="listen-stage">
-            <AudioButton key={ex.sentenceId} file={ex.audioUrl} big autoPlay onPlayed={() => setPlays((n) => n + 1)} label={plays === 0 ? "🔊 Послушать" : "🔊 Послушать ещё раз"} />
+            <AudioButton key={ex.sentenceId} file={ex.audioUrl} big autoPlay onPlayed={() => { setPlays((n) => n + 1); setAudioFailed(false); }} onFailed={() => setAudioFailed(true)} label={plays === 0 ? "🔊 Послушать" : "🔊 Послушать ещё раз"} />
             {listening && (
               <>
                 <p className="muted listen-count">прослушано: {plays}</p>
-                <p className="listen-hint">{listen.hint}</p>
+                <p className={listen.stage === "failed" ? "listen-hint error" : "listen-hint"}>{listen.hint}</p>
                 {listen.canWrite && <button className="primary" type="button" onClick={() => setWriting(true)}>Написать</button>}
                 <button className="quiet" type="button" onClick={() => setResult("gaveup")}>Не разобрала</button>
               </>
