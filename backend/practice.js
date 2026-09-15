@@ -3,6 +3,7 @@
 // из конечной справочной таблицы. Русский вопрос — перевод слова плюс
 // подпись формы словами («она, прошедшее»), русский глагол не спрягаем.
 import { FORM_LABELS } from "./conjugation.js";
+import { negationExercises } from "./negation.js";
 
 // Склонение предлогов с местоимениями. Таблица конечная и не меняется.
 const P = (ru, he) => ({ ru, he });
@@ -41,6 +42,7 @@ export const PERSONS = [
   { ru: "вы", forms: ["PERF-2mp", "AP-mp", "IMPF-2mp", "IMP-2mp"] },
 ];
 const MIN_CROSS = 2;
+const NEGATION_SHARE = 0.7;
 
 function formsOf(word) {
   if (!word?.forms) return null;
@@ -85,7 +87,16 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
   // («Мораша»), русский текст скрыт до ответа.
   for (const s of Array.isArray(sentences) ? sentences : []) {
     if (!s?.he || !s?.ru) continue;
+    // Предложение с «לא»/«אין» иногда идёт как «сделай отрицание»: показываем
+    // утвердительную версию, эталон — оригинал преподавателя. Одно предложение —
+    // одна единица в подходе, так что это вместо, а не вдобавок.
+    // Сначала жребий диктанта (доля «на слух» не должна падать из-за отрицаний), потом — отрицания.
     const dictation = Boolean(s.audioUrl) && rng() < 0.5;
+    const negation = dictation ? null : negationExercises([s], { recentLessonId })[0];
+    if (negation && rng() < NEGATION_SHARE) {
+      out.push(negation);
+      continue;
+    }
     out.push({
       kind: dictation ? "dictation" : "sentence",
       wordId: null,
@@ -178,7 +189,7 @@ export function buildExercises(words, { limit = 10, rng = Math.random, recentLes
   // не попадались бы вовсе. Предложениям — не больше 60% подхода, остаток
   // добирается тем, что есть.
   const cap = Math.max(0, limit);
-  const isSentence = (u) => head(u).kind === "sentence" || head(u).kind === "dictation";
+  const isSentence = (u) => ["sentence", "dictation", "negation"].includes(head(u).kind);
   const sentencesFirst = shuffled.filter(isSentence);
   const others = shuffled.filter((u) => !isSentence(u));
   const othersCount = others.reduce((n, u) => n + u.length, 0);

@@ -149,3 +149,30 @@ test("диктанты считаются предложениями в квот
   const list = buildExercises([verb, prep, { ...verb, id: 11 }, { ...prep, id: 12 }], { limit: 10, rng: () => 0.2, sentences });
   assert.equal(list.filter((e) => e.kind === "sentence" || e.kind === "dictation").length, 6);
 });
+
+test("предложение с «לא» иногда идёт как «сделай отрицание» — вместо предложения, не вдобавок", () => {
+  const withNot = [{ id: 1, he: "הוא לא יכול להפר את החוזה.", ru: "Он не может нарушить договор.", audioUrl: "", lessonId: 7, wrongCount: 0 }];
+  const neg = buildExercises([], { limit: 5, rng: () => 0.2, sentences: withNot });
+  assert.equal(neg.length, 1);
+  assert.equal(neg[0].kind, "negation");
+  assert.equal(neg[0].prompt, "הוא יכול להפר את החוזה.");
+  assert.equal(neg[0].answer, "הוא לא יכול להפר את החוזה.");
+  assert.equal(neg[0].formId, "negation");
+  assert.equal(neg[0].sentenceId, 1);
+  const plain = buildExercises([], { limit: 5, rng: () => 0.9, sentences: withNot });
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].kind, "sentence");
+  // С аудио жребий диктанта идёт первым: доля «на слух» не падает из-за отрицаний.
+  const heard = buildExercises([], { limit: 5, rng: () => 0.2, sentences: [{ ...withNot[0], audioUrl: "a.mp3" }] });
+  assert.equal(heard[0].kind, "dictation");
+  // Без отрицания в предложении — упражнения «отрицание» нет при любом rng.
+  const none = buildExercises([], { limit: 5, rng: () => 0.2, sentences: [{ ...withNot[0], he: "הוא יכול להפר את החוזה." }] });
+  assert.notEqual(none[0].kind, "negation");
+});
+
+test("«отрицание» входит в квоту предложений, формы всё равно попадают в подход", () => {
+  const sentences = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, he: "הוא לא בא " + i, ru: "он не пришёл " + i, lessonId: 7, wrongCount: 0 }));
+  const list = buildExercises([verb, prep, { ...verb, id: 11 }, { ...prep, id: 12 }], { limit: 10, rng: () => 0.2, sentences });
+  assert.equal(list.filter((e) => e.kind === "negation").length, 6);
+  assert.equal(list.filter((e) => e.kind !== "negation").length, 4);
+});
