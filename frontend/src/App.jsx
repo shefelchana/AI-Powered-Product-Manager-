@@ -460,6 +460,9 @@ function AudioButton({ file, big = false, autoPlay = false, onPlayed = null, onF
 // Как на уроке «хором»: перевод и подпись формы — пишешь форму на иврите.
 // Ответ известен точно (таблица Pealim или предлог с местоимением),
 // проверка та же щадящая, что в строгом режиме. Расписание не трогается.
+// Единицы, где ответ — целое предложение (поле в три строки, без подписи формы).
+const SENTENCE_KINDS = new Set(["sentence", "dictation", "negation"]);
+
 function PracticeScreen({ lang, onFinished }) {
   const [items, setItems] = useState(null);
   const [index, setIndex] = useState(0);
@@ -527,7 +530,7 @@ function PracticeScreen({ lang, onFinished }) {
       </p>
       {note && <p className="muted">{note}</p>}
       <p className="prompt-label muted">
-        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", dictation: listening ? "на слух: сначала просто послушай" : "на слух: напиши, что услышала" }[ex.kind]}
+        {ex.group ? `глагол «поперёк»: одно лицо, все времена · шаг ${ex.step} из ${ex.steps}` : { form: "форма глагола", preposition: "предлог с местоимением", sentence: "предложение целиком", negation: "сделай отрицание: перепиши предложение с «לא» или «אין»", dictation: listening ? "на слух: сначала просто послушай" : "на слух: напиши, что услышала" }[ex.kind]}
       </p>
       {ex.kind === "dictation" ? (
         result === null && (
@@ -544,13 +547,14 @@ function PracticeScreen({ lang, onFinished }) {
           </div>
         )
       ) : (
-        <p className="cloze" dir="ltr">{ex.prompt}</p>
+        <p className="cloze" dir={ex.kind === "negation" ? "rtl" : "ltr"}>{ex.prompt}</p>
       )}
-      {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="form-label" dir="ltr">{ex.label}</p>}
+      {ex.kind === "negation" && <p className="muted" dir="ltr">{ex.translation}</p>}
+      {!SENTENCE_KINDS.has(ex.kind) && <p className="form-label" dir="ltr">{ex.label}</p>}
 
       {result === null && !listening && (
         <form onSubmit={check}>
-          {ex.kind === "sentence" || ex.kind === "dictation" ? (
+          {SENTENCE_KINDS.has(ex.kind) ? (
             <textarea className="term-input sentence-input" dir="rtl" autoFocus rows={3} value={typed} onChange={(e) => setTyped(e.target.value)} />
           ) : (
             <input className="term-input" dir="rtl" autoFocus autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
@@ -576,7 +580,7 @@ function PracticeScreen({ lang, onFinished }) {
           </p>
           {ex.kind === "dictation" && <p className="muted" dir="ltr">{ex.translation}</p>}
           {ex.kind === "dictation" && <p className="muted listen-hint" dir="ltr">читай глазами под звук — так слово «сшивается» со звучанием</p>}
-          {ex.kind !== "sentence" && ex.kind !== "dictation" && <p className="muted">{ex.term} · {ex.label}</p>}
+          {!SENTENCE_KINDS.has(ex.kind) && <p className="muted">{ex.term} · {ex.label}</p>}
           <button className="primary" onClick={next}>Дальше</button>
         </div>
       )}
