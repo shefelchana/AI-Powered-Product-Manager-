@@ -63,6 +63,25 @@ Environment) and the word card gets a "draw" button. Image models are not on the
 free tier - without billing the request comes back as an exhausted quota, and the
 card says so. `IMAGE_MODEL` overrides the model, default `gemini-2.5-flash-image`.
 
+## AI tutor
+
+The same `GEMINI_API_KEY` switches on the tutor inside the progress block: a weekly digest
+(numbers come from the app, the model only phrases them; cached 7 days) and a breakdown of recent
+misses, one at a time. Rules explain what they can without the model (lookalike or homophone
+letters, transposition, missing article, preposition + pronoun, speaker gender); Gemini Flash
+(`gemini-3.6-flash`, thinking off, JSON schema) covers the rest, and every model answer is
+validated before it is shown. `TUTOR_DAILY_CALLS` caps model calls per day (default 20),
+`TUTOR_MODEL` overrides the model. The tutor never writes to the deck.
+
+Evals on real misses from the ulpan site: `node evals/tutor-misses.mjs` (needs the key;
+`--rules-only` runs offline). Fixtures: `backend/fixtures/tutor-misses.json`.
+
+## Card assembly after a lesson
+
+`POST /api/lessons/:id/enrich` (header `x-enrich-token`, value of `ENRICH_TOKEN`) fills empty
+fields only: Pealim forms for the lesson's verbs, the teacher's sentences linked to words, a Hebrew
+definition from he.wiktionary. Without `ENRICH_TOKEN` the route answers 503.
+
 ## Tests
 
 Pure functions only, on Node's built-in runner — no dependencies to install:
