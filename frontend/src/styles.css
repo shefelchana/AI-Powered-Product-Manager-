@@ -657,3 +657,5 @@ button {
 .tutor-pair { font-size: 1.15rem; }
 
 .site-trend small { opacity: 0.8; }
+
+.site-trend span { white-space: nowrap; }
