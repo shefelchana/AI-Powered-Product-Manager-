@@ -13,7 +13,7 @@ with sync_playwright() as p:
     errors = []; pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None); pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.goto(BASE); pg.wait_for_load_state("networkidle")
     pg.get_by_role("button", name="Повторять").first.click(); pg.wait_for_timeout(500)
-    pg.get_by_role("button", name="Фразы: формы и предлоги").click()
+    pg.get_by_role("button", name="Фразы: диктанты, формы, отрицания").click()
     pg.wait_for_timeout(1500)
     found = False
     for i in range(12):

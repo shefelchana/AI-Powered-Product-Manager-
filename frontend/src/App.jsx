@@ -254,7 +254,7 @@ function TodayBlock({ step, onGo, support = "" }) {
       <p className="today-title">{step.title}</p>
       <p className="muted small">{step.hint}</p>
       <button className="primary" type="button" onClick={() => onGo(step.action)}>{step.button}</button>
-      {step.then && <p className="muted small">потом — {step.then.short}</p>}
+      {step.then && <button className="quiet" type="button" onClick={() => onGo(step.then.action)}>потом — {step.then.short}</button>}
     </div>
   );
 }
@@ -932,7 +932,10 @@ function LearnScreen({ queue, pool, onFinished, ahead = false }) {
 
 // Одна вкладка — все способы повторить. Раньше эти входы висели над каждым
 // экраном и на телефоне отодвигали поле ввода на второй экран.
+// Меню повторения (UX-прогон 16.09): на виду два действия — повторение по расписанию и одно
+// упражнение дня; остальные способы под «Другие способы», чтобы не выбирать заново каждый раз.
 function ReviewMenu({ dueCount, onReview, onAhead, onPractice, onEcho, prep, progress }) {
+  const [more, setMore] = useState(false);
   return (
     <div className="review-menu">
       {dueCount === 0 ? (
@@ -940,29 +943,37 @@ function ReviewMenu({ dueCount, onReview, onAhead, onPractice, onEcho, prep, pro
           <p className="muted">На сегодня всё повторено.</p>
           {/* Вне расписания: «знаю» коробку не двигает, промах возвращает слово на сегодня. */}
           <button className="primary" onClick={() => onAhead(7, "learn")}>Повторить ещё: узнать, потом написать</button>
-          <div className="review-menu-row">
-            <button className="secondary" onClick={() => onAhead(10, "type")}>Только написать по переводу</button>
-            <button className="secondary" onClick={() => onAhead(10, "choose")}>Только выбрать из четырёх</button>
-          </div>
           <p className="muted small">Это вне расписания: «знаю» ничего не меняет, промах вернёт слово на сегодня.</p>
         </>
       ) : (
         <>
           <p className="muted">К повторению: {dueCount}</p>
           <button className="primary" onClick={() => onReview(7, false, "learn")}>Учить: узнать, потом написать</button>
-          <div className="review-menu-row">
-            <button className="secondary" onClick={() => onReview(10, false, "type")}>Только написать по переводу</button>
-            <button className="secondary" onClick={() => onReview(10, false, "choose")}>Только выбрать из четырёх</button>
-          </div>
+          {/* Кнопка «нет сил» остаётся на виду: она нужна ровно тогда, когда решать тяжелее всего. */}
+          {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "learn")}>Нет сил — только 3</button>}
         </>
       )}
-      <div className="review-menu-row">
-        {dueCount > 3 && <button className="secondary" onClick={() => onReview(3, false, "learn")}>Нет сил — только 3</button>}
-        <button className="secondary" onClick={onPractice}>Фразы: формы и предлоги</button>
-      </div>
-      <div className="review-menu-row">
-        <button className="secondary" onClick={onEcho}>Произношение: повтори за преподавателем</button>
-      </div>
+      <button className="secondary" onClick={onPractice}>Фразы: диктанты, формы, отрицания</button>
+
+      <details className="more-ways" open={more} onToggle={(e) => setMore(e.currentTarget.open)}>
+        <summary>Другие способы</summary>
+        <div className="review-menu-row">
+          {dueCount === 0 ? (
+            <>
+              <button className="secondary" onClick={() => onAhead(10, "type")}>Только написать по переводу</button>
+              <button className="secondary" onClick={() => onAhead(10, "choose")}>Только выбрать из четырёх</button>
+            </>
+          ) : (
+            <>
+              <button className="secondary" onClick={() => onReview(10, false, "type")}>Только написать по переводу</button>
+              <button className="secondary" onClick={() => onReview(10, false, "choose")}>Только выбрать из четырёх</button>
+            </>
+          )}
+        </div>
+        <div className="review-menu-row">
+          <button className="secondary" onClick={onEcho}>Произношение: повтори за преподавателем</button>
+        </div>
+      </details>
       {prep}
       {progress}
     </div>
