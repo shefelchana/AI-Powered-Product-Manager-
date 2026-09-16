@@ -56,3 +56,16 @@ test("удаление урока: ссылка на предложение об
   const plain = presentWord(await loadWord(word.id));
   assert.equal(plain.exampleList[0].audioUrl, "");
 });
+
+test("фраза, уже записанная текстом (из описания задания), не дублируется — получает аудио и форму", async () => {
+  const lesson = await Lesson.create({ date: "2026-09-17", title: "домашка" });
+  const word = await Word.create({ term: "להעניק", translation: "предоставлять", forms: JSON.stringify({ "INF-L": { bare: "להעניק" }, "PERF-3ms": { bare: "העניק" } }) });
+  await Example.create({ wordId: word.id, text: "זה העניק משמעות חדשה לחיים שלי.", origin: "lesson", lessonId: lesson.id });
+  const s = await Sentence.create({ lessonId: lesson.id, he: "זה העניק משמעות חדשה לחיים שלי.", ru: "Это придало новый смысл моей жизни.", audioUrl: "a9.mp3" });
+  const res = await linkLesson(lesson.id);
+  assert.equal(res.linked, 1);
+  const rows = await Example.findAll({ where: { wordId: word.id } });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].sentenceId, s.id);
+  assert.equal(rows[0].matched, "העניק");
+});

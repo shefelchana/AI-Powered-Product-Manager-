@@ -15,7 +15,16 @@ export async function linkSentences({ words, sentences, log = null }) {
       const dup = await Example.findOne({ where: { wordId: word.id, sentenceId: m.sentenceId } });
       if (dup) continue;
       const s = sentences.find((x) => x.id === m.sentenceId);
-      await Example.create({ wordId: word.id, text: s.he, origin: "lesson", lessonId: s.lessonId, timestamp: "", sentenceId: s.id, matched: m.matched });
+      // Та же фраза уже записана текстом (из описания задания или руками) — не дублировать,
+      // а дать ей аудио и форму: одна строка на фразу.
+      const sameText = await Example.findOne({ where: { wordId: word.id, sentenceId: null, text: s.he } });
+      if (sameText) {
+        sameText.sentenceId = s.id; sameText.matched = m.matched;
+        if (!sameText.lessonId) sameText.lessonId = s.lessonId;
+        await sameText.save();
+      } else {
+        await Example.create({ wordId: word.id, text: s.he, origin: "lesson", lessonId: s.lessonId, timestamp: "", sentenceId: s.id, matched: m.matched });
+      }
       linked += 1;
       log?.({ wordId: word.id, term: word.term, sentenceId: s.id, formId: m.formId, prefix: m.prefix, matched: m.matched });
     }
