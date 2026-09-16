@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { pickEcho } from "./echo.js";
 import { linkLesson, linkWord } from "./enrich.js";
 import { lookupHeWiktionary } from "./he-wiktionary.js";
+import { buildPhrasesPrompt, validatePhrases, PHRASES_SCHEMA, phrasesKey } from "./phrases.js";
 import { classifyDeterministic, buildMissPrompt, validateMiss, askGemini, MISS_SCHEMA, WEEKLY_SCHEMA, weeklyFacts, buildWeeklyPrompt, validateWeekly, collectMisses } from "./tutor.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
@@ -760,6 +761,36 @@ app.get("/api/tutor/weekly", async (req, res) => {
   }
   } catch (error) {
     res.status(500).json({ error: `Дайджест не удался: ${error.message}` });
+  }
+});
+
+// Фразы на сегодня от тьютора для слова дня: кэш на слово, лимит общий с тьютором, в колоду не пишем.
+app.get("/api/words/:id/phrases", async (req, res) => {
+  try {
+    const word = await Word.findByPk(req.params.id);
+    if (!word) return res.status(404).json({ error: "Слово не найдено" });
+    const key = String(word.id);
+    const sig = phrasesKey(word.toJSON());
+    const cached = await TutorNote.findOne({ where: { kind: "phrases", forDate: key }, order: [["id", "DESC"]] });
+    if (cached && !req.query.force) {
+      const data = JSON.parse(cached.json);
+      // Кэш годен, пока слово то же (перевод и формы не менялись); пустой результат — на день.
+      const fresh = data.sig === sig && (data.phrases?.length > 0 || data.day === today());
+      if (fresh) return res.json({ phrases: data.phrases ?? [], note: data.note, cached: true });
+    }
+    if (!process.env.GEMINI_API_KEY) return tutorOff(res);
+    if (!String(word.translation ?? "").trim()) return res.json({ phrases: [], note: "Сначала перевод: без него тьютор не знает, что это за слово" });
+    if (!(await takeTutorCall())) return res.json({ phrases: [], note: "Лимит тьютора на сегодня исчерпан" });
+    const raw = await askGemini({ prompt: buildPhrasesPrompt(word.toJSON()), schema: PHRASES_SCHEMA });
+    const v = validatePhrases(raw, word.toJSON());
+    const payload = v.phrases.length === 0
+      ? { phrases: [], note: `Тьютор не дал годных фраз (${v.note}) — завтра попробуем снова`, sig, day: today() }
+      : { phrases: v.phrases, source: "tutor", sig };
+    await TutorNote.create({ kind: "phrases", forDate: key, json: JSON.stringify(payload) });
+    res.json({ phrases: payload.phrases, note: payload.note, cached: false });
+  } catch (error) {
+    if (error.code === "quota") tutorPausedUntil = Date.now() + 60 * 60 * 1000;
+    res.status(502).json({ error: `Тьютор не ответил: ${error.message}` });
   }
 });
 

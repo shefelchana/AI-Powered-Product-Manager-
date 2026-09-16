@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, echoSet, tutorMiss, tutorWeekly, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, echoSet, tutorMiss, tutorWeekly, wordPhrases, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { audioSrc, dictationStage } from "./listen.js";
 import { ECHO_START, MAX_TAKE_SECONDS, echoReduce, micErrorKind, pickMimeType } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
-import { todayInIsrael, todayStep } from "./plan.js";
+import { greeting, supportLine, todayInIsrael, todayStep } from "./plan.js";
 import { partitionWords, searchWords } from "./words.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
@@ -244,10 +244,12 @@ function Help({ lang, db }) {
 // Одно слово на день, с которым живёшь: прикладываешь его к своим ситуациям,
 // пока оно не побывает в десятке разных контекстов.
 // Один шаг на сегодня (Анна, 15.09: только «сегодня», без плана на неделю).
-function TodayBlock({ step, onGo }) {
+function TodayBlock({ step, onGo, support = "" }) {
   if (!step) return null;
   return (
     <div className="today">
+      <p className="welcome">{greeting()} 👋</p>
+      {support && <p className="support">{support}</p>}
       <p className="field-label">Сегодня</p>
       <p className="today-title">{step.title}</p>
       <p className="muted small">{step.hint}</p>
@@ -257,9 +259,74 @@ function TodayBlock({ step, onGo }) {
   );
 }
 
-function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
+// Сетка форм глагола: он / она / мы × прошедшее / настоящее / будущее; «Все формы» — вся таблица.
+const GRID = [
+  { who: "я", ids: ["PERF-1s", "AP-fs", "IMPF-1s"] },
+  { who: "он", ids: ["PERF-3ms", "AP-ms", "IMPF-3ms"] },
+  { who: "она", ids: ["PERF-3fs", "AP-fs", "IMPF-3fs"] },
+  { who: "мы", ids: ["PERF-1p", "AP-mp", "IMPF-1p"] },
+];
+function parseForms(word) {
+  try { const f = typeof word?.forms === "string" ? JSON.parse(word.forms || "{}") : (word?.forms ?? {}); return f && typeof f === "object" ? f : {}; } catch { return {}; }
+}
+function FormsGrid({ word }) {
+  const [all, setAll] = useState(false);
+  const forms = parseForms(word);
+  const has = GRID.some((r) => r.ids.some((id) => forms[id]?.bare));
+  if (!has) return null;
+  const cell = (id) => forms[id]?.bare ? <span className="form-cell" dir="rtl">{forms[id].vocalized || forms[id].bare} <SpeakButton text={forms[id].bare} lang="he" /></span> : <span className="muted">—</span>;
+  return (
+    <div className="forms-grid">
+      <p className="field-label">Формы · читай вслух</p>
+      <div className="forms-scroll">
+        <table>
+          <thead><tr><th></th><th>прошедшее</th><th>настоящее</th><th>будущее</th></tr></thead>
+          <tbody>{GRID.map((r) => <tr key={r.who}><th>{r.who}</th>{r.ids.map((id) => <td key={`${r.who}-${id}`}>{cell(id)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+      {Object.values(forms).filter((f) => f?.bare).length > 9 && <button className="quiet" type="button" onClick={() => setAll((v) => !v)}>{all ? "Свернуть" : "Все формы"}</button>}
+      {all && (
+        <ul className="forms-all">
+          {Object.entries(forms).map(([id, f]) => f?.bare && <li key={id}><span className="muted">{FORM_LABELS_RU[id] ?? id}</span> <span dir="rtl">{f.vocalized || f.bare}</span> <SpeakButton text={f.bare} lang="he" /></li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+const FORM_LABELS_RU = { "PERF-1s": "я, прошедшее", "PERF-2ms": "ты (м.), прошедшее", "PERF-2fs": "ты (ж.), прошедшее", "PERF-3ms": "он, прошедшее", "PERF-3fs": "она, прошедшее", "PERF-1p": "мы, прошедшее", "PERF-2mp": "вы (м.), прошедшее", "PERF-2fp": "вы (ж.), прошедшее", "PERF-3p": "они, прошедшее", "AP-ms": "он / я / ты (м.), настоящее", "AP-fs": "она / я / ты (ж.), настоящее", "AP-mp": "они / мы / вы (м.), настоящее", "AP-fp": "они / мы / вы (ж.), настоящее", "IMPF-1s": "я, будущее", "IMPF-2ms": "ты (м.), будущее", "IMPF-2fs": "ты (ж.), будущее", "IMPF-3ms": "он, будущее", "IMPF-3fs": "она, будущее", "IMPF-1p": "мы, будущее", "IMPF-2mp": "вы (м.), будущее", "IMPF-2fp": "вы (ж.), будущее", "IMPF-3mp": "они (м.), будущее", "IMPF-3fp": "они (ж.), будущее", "IMP-2ms": "повеление (м.)", "IMP-2fs": "повеление (ж.)", "IMP-2mp": "повеление (мн.)", "INF-L": "инфинитив" };
+
+// Фразы на сегодня от тьютора: разные лица, числа, рода, времена. Кэш на слово на сервере.
+function DayPhrases({ word, enabled }) {
+  const [data, setData] = useState(undefined);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    setData(undefined);
+    wordPhrases(word.id).then((d) => { if (alive) setData(d); }).catch((e) => { if (alive) setData({ error: e.message }); });
+    return () => { alive = false; };
+  }, [word.id, enabled]);
+  if (!enabled) return null;
+  if (data === undefined) return <p className="muted small">тьютор подбирает фразы…</p>;
+  if (data.error) return <p className="muted small">тьютор: {data.error}</p>;
+  if (!data.phrases?.length) return data.note ? <p className="muted small">{data.note}</p> : null;
+  return (
+    <div className="day-phrases">
+      <p className="field-label">Фразы на сегодня · тьютор</p>
+      <ul className="examples">
+        {data.phrases.map((p, i) => (
+          <li key={i} dir="rtl">
+            {p.he} <SpeakButton text={p.he} lang="he" />
+            <span className="muted phrase-ru" dir="ltr">{p.ru}{p.form ? ` · ${p.form}` : ""}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">Повтори каждую вслух, потом закрой глаза и скажи ещё раз.</p>
+    </div>
+  );
+}
+
+function DayScreen({ lang, onChanged, step = null, onGo = () => {}, tutor = false, support = "" }) {
   const [word, setWord] = useState(undefined);
-  const [draft, setDraft] = useState("");
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
@@ -278,22 +345,9 @@ function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
     return <p className="muted">Пока нет слов из первых коробок. Добавь слово — оно и станет словом дня.</p>;
   }
 
-  async function submit(event) {
-    event.preventDefault();
-    setError(null);
-    try {
-      setWord(await addExample(word.id, draft));
-      setDraft("");
-      onChanged();
-    } catch (err) {
-      // Фразу не стираем: её придумывали.
-      setError(err.message);
-    }
-  }
-
   return (
     <div className="day">
-      <TodayBlock step={step} onGo={onGo} />
+      <TodayBlock step={step} onGo={onGo} support={support} />
       <p className="field-label">Слово дня</p>
       {/* Почему именно это слово — правило видно, а не спрятано (Анна, 12.09). */}
       {word.reason && <p className="day-reason">{word.reason}</p>}
@@ -308,22 +362,10 @@ function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
       <SourceNote word={word} />
       <RootLine word={word} />
       <Family word={word} />
-
-      <form onSubmit={submit}>
-        <label className="field-label" htmlFor="example">Твоя фраза с этим словом</label>
-        <textarea
-          id="example"
-          dir={dirOf(word.lang)}
-          rows={2}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <button className="primary" type="submit">Добавить фразу</button>
-      </form>
-
+      <FormsGrid word={word} />
       {error && <p className="error">{error}</p>}
-
       <Phrases word={word} />
+      <DayPhrases word={word} enabled={tutor && lang === "he"} />
     </div>
   );
 }
@@ -1212,7 +1254,27 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
 
 // ---------- список слов: правка, справка, удаление ----------
 
-function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds = [] }) {
+// Своя фраза со словом — на карточке (переехала с экрана дня, Анна 16.09): она идёт в строгий режим
+// подсказкой и в список фраз карточки.
+function OwnPhraseForm({ word, onAdded }) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState(null);
+  async function submit(event) {
+    event.preventDefault();
+    setError(null);
+    try { await addExample(word.id, draft); setDraft(""); onAdded(); } catch (err) { setError(err.message); }
+  }
+  return (
+    <form onSubmit={submit} className="own-phrase">
+      <label className="field-label" htmlFor={`own-${word.id}`}>Своя фраза с этим словом — пойдёт подсказкой в повторение</label>
+      <textarea id={`own-${word.id}`} dir={dirOf(word.lang)} rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <button className="secondary small-btn" type="submit" disabled={!draft.trim()}>Добавить фразу</button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+
+function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds = [], lessonDate = "" }) {
   const [draft, setDraft] = useState(word);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1250,6 +1312,10 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
 
   return (
     <div className="word-card">
+      <p className="muted small word-meta">
+        добавлено {formatDate(word.createdAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(word.createdAt)) : "")}
+        {lessonDate ? ` · урок ${formatDate(lessonDate)}` : ""}
+      </p>
       <label className="field-label">Слово</label>
       <input
         dir="rtl"
@@ -1267,6 +1333,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
       <SourceNote word={word} />
       <RootLine word={word} />
       <Phrases word={word} />
+      <OwnPhraseForm word={word} onAdded={onChanged} />
 
       <label className="field-label">Перевод</label>
       <input
@@ -1432,14 +1499,15 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
       )}
       {report.lessons.length > 0 && (
         <div className="lesson-list">
-          <p className="muted">По урокам — можно повторить слова любого занятия, без записи в расписание:</p>
+          <p className="muted">По дням — классная, домашняя и вписанное на уроке вместе; повторить любой день, без записи в расписание:</p>
           {report.lessons.slice(0, 6).map((l) => (
-            <div key={l.id} className="lesson-row">
+            <div key={l.date} className="lesson-row">
               <span>
-                {l.title.replace(/ · Hebreway$/, "") || l.date}
-                <span className="muted"> · держится {l.holding} из {l.total}{l.learned ? `, выучено ${l.learned}` : ""}</span>
+                <strong>Урок {formatDate(l.date)}</strong>
+                <span className="muted"> · слов {l.total}, держится {l.holding}{l.learned ? `, выучено ${l.learned}` : ""}</span>
+                {l.title && <span className="muted small"> · {l.title.replace(/Классная работа [\d.]+/g, "класс").replace(/Домашняя работа [\d.]+/g, "домашка")}</span>}
               </span>
-              <button className="secondary small-btn" type="button" onClick={() => onLesson(l.id)}>Повторить</button>
+              <button className="secondary small-btn" type="button" onClick={() => onLesson(l.ids ?? [l.id])}>Повторить</button>
             </div>
           ))}
         </div>
@@ -1451,7 +1519,7 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
   );
 }
 
-function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
+function WordsScreen({ words, lessons = [], onChanged, canDraw = true, learnedIds = [] }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState("");
 
@@ -1468,6 +1536,7 @@ function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
       open={openId === word.id}
       onToggle={() => setOpenId(openId === word.id ? null : word.id)}
       onChanged={onChanged} canDraw={canDraw} learnedIds={learnedIds}
+      lessonDate={lessons.find((l) => l.id === word.lessonId)?.date ?? ""}
     />
   );
 
@@ -1639,7 +1708,7 @@ export default function App() {
           onPractice={() => setView("practice")}
           onEcho={() => setView("echo")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
-          progress={<ProgressBlock report={report} stats={{ phrases, pending }} tutor={Boolean(features.tutor)} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
+          progress={<ProgressBlock report={report} stats={{ phrases, pending }} tutor={Boolean(features.tutor)} onLesson={(ids) => startLessonReview(mine.filter((w) => ids.includes(w.lessonId)))} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
@@ -1647,8 +1716,10 @@ export default function App() {
       {view === "day" && (
         <DayScreen
           lang={lang}
+          tutor={Boolean(features.tutor)}
           onChanged={reload}
           step={lang === "he" ? todayStep({ dueCount, lessonDate: lessonSummary(mine, lessons).lesson?.date ?? null, today: todayInIsrael(), lessonWords: lessonSummary(mine, lessons).words.length }) : null}
+          support={lang === "he" ? supportLine({ dueCount, activeDays: (report?.activeDays ?? []).filter((d) => d.active).length, learned: (report?.learnedIds ?? []).length, site: report?.site ?? [], lessonWords: lessonSummary(mine, lessons).words.length }) : ""}
           onGo={(action) => {
             if (action !== "prep") { setView(action); return; }
             const words = lessonSummary(mine, lessons).words;
@@ -1658,7 +1729,7 @@ export default function App() {
         />
       )}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
+      {view === "words" && <WordsScreen words={mine} lessons={lessons} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
       {view === "review" && mode === "learn" && (
         <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} ahead={ahead} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}

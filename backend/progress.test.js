@@ -41,8 +41,9 @@ test("что не держится: слова с двумя и более пр�
 
 test("по урокам: сколько слов держится (коробка ≥ 3) и сколько выучено", () => {
   const r = progressReport(words, attempts, lessons, [], d("2026-09-12"));
-  assert.deepEqual(r.lessons[0], { id: 1, title: "Домашняя работа 07.09", date: "2026-09-07", total: 2, holding: 2, learned: 1 });
-  assert.deepEqual(r.lessons[1], { id: 2, title: "Классная 09.09", date: "2026-09-09", total: 1, holding: 0, learned: 0 });
+  // С 16.09 уроки сгруппированы по дням (новые сверху): у дня есть ids всех заданий даты.
+  assert.deepEqual(r.lessons[1], { id: 1, ids: [1], title: "Домашняя работа 07.09", date: "2026-09-07", total: 2, holding: 2, learned: 1 });
+  assert.deepEqual(r.lessons[0], { id: 2, ids: [2], title: "Классная 09.09", date: "2026-09-09", total: 1, holding: 0, learned: 0 });
 });
 
 test("активность: дни с ответами за последние 14 дней, без стриков", () => {
@@ -72,4 +73,19 @@ test("сайт ульпана: доля ошибок по заданиям, то
   const r = progressReport([], [], lessons, []);
   assert.deepEqual(r.site.map((s) => [s.date, s.answered, s.wrong, s.pct]), [["2026-09-07", 14, 5, 36], ["2026-09-09", 10, 8, 80]]);
   assert.deepEqual(progressReport([], [], [], []).site, []);
+});
+
+test("по дням: классная, домашняя и своя запись одной даты сливаются в один день", () => {
+  const lessons = [
+    { id: 10, date: "2026-09-14", title: "Классная работа 14.09 · Hebreway" },
+    { id: 11, date: "2026-09-14", title: "Домашняя работа 14.09 · Hebreway" },
+    { id: 12, date: "2026-09-14", title: "" },
+    { id: 7, date: "2026-09-09", title: "Домашняя работа 09.09 · Hebreway" },
+  ];
+  const words = [
+    { id: 1, lessonId: 10, box: 3 }, { id: 2, lessonId: 11, box: 1 }, { id: 3, lessonId: 12, box: 4 }, { id: 4, lessonId: 7, box: 1 },
+  ];
+  const r = progressReport(words, [], lessons, []);
+  assert.deepEqual(r.lessons.map((d) => [d.date, d.ids, d.total, d.holding]), [["2026-09-14", [10, 11, 12], 3, 2], ["2026-09-09", [7], 1, 0]]);
+  assert.equal(r.lessons[0].title, "Классная работа 14.09 + Домашняя работа 14.09");
 });

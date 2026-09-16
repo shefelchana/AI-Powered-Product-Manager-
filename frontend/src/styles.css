@@ -659,3 +659,22 @@ button {
 .site-trend small { opacity: 0.8; }
 
 .site-trend span { white-space: nowrap; }
+
+/* Экран дня: сетка форм и фразы на сегодня */
+.forms-grid table { width: 100%; border-collapse: collapse; margin: 0.25rem 0 0.5rem; }
+.forms-grid th { font-weight: 500; color: #9aa0a6; font-size: 0.85rem; text-align: left; padding: 0.2rem 0.3rem; }
+.forms-grid td { padding: 0.3rem; border-top: 1px solid #2b2f37; font-size: 1.15rem; }
+.forms-grid .form-cell { white-space: nowrap; }
+.forms-grid .speak, .forms-all .speak, .day-phrases .speak { font-size: 1rem; padding: 0.1rem 0.4rem; }
+.forms-all { padding-left: 1rem; }
+.forms-all li { margin: 0.2rem 0; }
+.own-phrase { margin-top: 0.75rem; }
+
+.today .welcome { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.25rem; }
+.today .support { margin: 0 0 0.75rem; color: #c9cdd3; }
+
+.forms-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.forms-grid td { font-size: 1.05rem; }
+
+/* Список фраз: без выхода за край при направлении справа налево */
+.examples { max-width: 100%; box-sizing: border-box; padding-inline: 1.25rem; overflow-wrap: anywhere; }

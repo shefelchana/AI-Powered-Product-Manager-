@@ -32,17 +32,28 @@ export function progressReport(words, attempts, lessons, practice, now = new Dat
     .slice(0, 5)
     .map((w) => ({ id: w.id, term: w.term, translation: w.translation ?? "", misses: Number(w.misses) }));
 
-  const byLesson = (Array.isArray(lessons) ? lessons : []).map((l) => {
-    const ws = list.filter((w) => w.lessonId === l.id);
+  // По дням, а не по заданиям (Анна, 16.09): классная, домашняя и то, что вписано на уроке, — один день.
+  const byDate = new Map();
+  for (const l of Array.isArray(lessons) ? lessons : []) {
+    const key = String(l.date);
+    if (!byDate.has(key)) byDate.set(key, { id: l.id, ids: [], date: key, titles: [] });
+    const d = byDate.get(key);
+    d.ids.push(l.id);
+    if (l.title) d.titles.push(l.title);
+  }
+  const byLesson = [...byDate.values()].map((d) => {
+    const ids = new Set(d.ids);
+    const ws = list.filter((w) => ids.has(w.lessonId));
     return {
-      id: l.id,
-      title: l.title || "",
-      date: l.date,
+      id: d.id,
+      ids: d.ids,
+      date: d.date,
+      title: d.titles.length ? d.titles.map((t) => t.replace(/ · Hebreway$/, "")).join(" + ") : "",
       total: ws.length,
       holding: ws.filter((w) => Number(w.box) >= 3).length,
       learned: ws.filter((w) => learnedIds.has(w.id)).length,
     };
-  }).filter((l) => l.total > 0);
+  }).filter((l) => l.total > 0).sort((a, b) => b.date.localeCompare(a.date));
 
   const days = new Set(log.map((a) => localToday(new Date(a.createdAt))));
   const activeDays = Array.from({ length: 14 }, (_, i) => {
