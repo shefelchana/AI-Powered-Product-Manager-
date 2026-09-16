@@ -8,7 +8,7 @@ import { migrate } from "./migrate.js";
 import { presentWord, addExampleTo } from "./present.js";
 import { startLesson, currentLesson, finishLesson, deleteLesson } from "./lessons.js";
 import { parseLessonJson, lessonCandidates, applyLessonImport } from "./lesson-import.js";
-import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
+import { Lesson, PracticeAttempt, Sentence, ReviewAttempt, TutorCall, TutorNote } from "./models.js";
 import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
 import { pickWordOfDay, reasonFor } from "./day.js";
@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { pickEcho } from "./echo.js";
 import { linkLesson, linkWord } from "./enrich.js";
 import { lookupHeWiktionary } from "./he-wiktionary.js";
+import { classifyDeterministic, buildMissPrompt, validateMiss, askGemini, MISS_SCHEMA, WEEKLY_SCHEMA, weeklyFacts, buildWeeklyPrompt, validateWeekly, collectMisses } from "./tutor.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -41,7 +42,7 @@ app.get("/api/health", async (req, res) => {
     await sequelize.authenticate();
     if (!schemaReady) return res.status(503).json({ status: "migrating", db: dbKind });
     // Что включено на этом сервере: клиент прячет кнопки, для которых нет ключа.
-    res.json({ status: "ok", db: dbKind, features: { draw: Boolean(process.env.GEMINI_API_KEY) } });
+    res.json({ status: "ok", db: dbKind, features: { draw: Boolean(process.env.GEMINI_API_KEY), tutor: Boolean(process.env.GEMINI_API_KEY) } });
   } catch (error) {
     res.status(500).json({ status: "error", db: dbKind, message: error.message });
   }
@@ -280,7 +281,7 @@ app.patch("/api/words/:id/review", async (req, res) => {
   }
   // Журнал — не повод ронять ответ: без строки в журнале расписание всё равно верное.
   try {
-    await ReviewAttempt.create({ wordId: word.id, known: req.body.known, mode, boxBefore, boxAfter: word.box });
+    await ReviewAttempt.create({ wordId: word.id, known: req.body.known, mode, boxBefore, boxAfter: word.box, given: req.body.known ? "" : clean(req.body?.given, 300) });
   } catch (error) {
     console.error("review log:", error.message);
   }
@@ -672,6 +673,82 @@ app.post("/api/lessons/:id/enrich", async (req, res) => {
   }
 });
 
+// ---------- тьютор ----------
+// Дневной лимит вызовов модели — в базе: сервер на Render засыпает и перезапускается.
+const TUTOR_DAILY_CALLS = Number(process.env.TUTOR_DAILY_CALLS) || 20;
+async function takeTutorCall() {
+  if (Number(process.env.TUTOR_PAUSED_UNTIL) > Date.now()) return false;
+  const day = today();
+  const [row] = await TutorCall.findOrCreate({ where: { day }, defaults: { day, count: 0 } });
+  if (row.count >= TUTOR_DAILY_CALLS) return false;
+  row.count += 1; await row.save();
+  return true;
+}
+const tutorOff = (res) => res.status(503).json({ error: "Тьютор выключен: на сервере нет GEMINI_API_KEY" });
+
+async function recentMisses(limit) {
+  const words = (await Word.unscoped().findAll({ where: { lang: "he" }, attributes: ["id", "term", "translation", "forms"] })).map((w) => w.toJSON());
+  const practiceAttempts = (await PracticeAttempt.findAll({ where: { ok: false, given: { [Op.ne]: "" } }, order: [["id", "DESC"]], limit: 30 })).map((a) => a.toJSON());
+  const reviewAttempts = (await ReviewAttempt.findAll({ where: { known: false, given: { [Op.ne]: "" } }, order: [["id", "DESC"]], limit: 30 })).map((a) => a.toJSON());
+  const sentences = (await Sentence.findAll({ where: { [Op.or]: [{ myAnswer: { [Op.ne]: "" } }, { lastGiven: { [Op.ne]: "" } }] }, order: [["updatedAt", "DESC"]], limit: 30 })).map((x) => x.toJSON());
+  return collectMisses({ practiceAttempts, reviewAttempts, sentences, words, limit });
+}
+
+// Один промах за раз: skip — сколько уже разобрано в этой сессии. Правило — бесплатно; модель — по лимиту.
+app.get("/api/tutor/miss", async (req, res) => {
+  const skip = Math.max(0, parseInt(req.query.skip, 10) || 0);
+  const misses = await recentMisses(skip + 10);
+  if (!misses[skip]) return res.json({ miss: null, total: misses.length });
+  const publicOf = (m) => ({ kind: m.kind, given: m.given, expected: m.expected, ru: m.ru, term: m.term ?? "", formId: m.formId ?? "" });
+  // Идём от skip дальше: правило — сразу; модель — по лимиту; если модель молчит — берём следующий
+  // промах, который объясняется правилом, а не показываем пустоту.
+  let note = "";
+  for (let i = skip; i < misses.length; i += 1) {
+    const miss = misses[i];
+    const rule = classifyDeterministic(miss);
+    if (rule) return res.json({ miss: publicOf(miss), explanation: rule, skip: i, note });
+    if (!process.env.GEMINI_API_KEY) { note = note || "Тьютор выключен: нет GEMINI_API_KEY — показываю только то, что объясняется правилами"; continue; }
+    if (!(await takeTutorCall())) { note = note || "Лимит разборов моделью на сегодня исчерпан — показываю то, что объясняется правилами"; continue; }
+    try {
+      const raw = await askGemini({ prompt: buildMissPrompt(miss), schema: MISS_SCHEMA });
+      const v = validateMiss(raw, miss);
+      if (v.ok) return res.json({ miss: publicOf(miss), explanation: v.value, skip: i, note });
+      note = note || `Тьютор ответил невнятно (${v.reason}) — пропускаю такие промахи`;
+    } catch (error) {
+      note = note || `Тьютор не ответил (${error.message}) — показываю то, что объясняется правилами`;
+      if (error.code === "quota" || error.code === "no_key") process.env.TUTOR_PAUSED_UNTIL = String(Date.now() + 60 * 60 * 1000);
+    }
+  }
+  res.json({ miss: publicOf(misses[skip]), explanation: null, skip, note: note || "Правило не подошло, а модель не помогла — пропусти этот промах" });
+});
+
+// Дайджест недели: кэш на 7 дней, цифры — из отчёта прогресса, модель только формулирует.
+app.get("/api/tutor/weekly", async (req, res) => {
+  const cached = await TutorNote.findOne({ where: { kind: "weekly" }, order: [["id", "DESC"]] });
+  const fresh = cached && (Date.now() - new Date(cached.createdAt).getTime()) < 7 * 86400000;
+  if (fresh) return res.json({ ...JSON.parse(cached.json), date: cached.forDate, cached: true });
+  if (!process.env.GEMINI_API_KEY) return tutorOff(res);
+  const lang = "he";
+  const words = await Word.unscoped().findAll({ where: { lang }, attributes: [...LIGHT] });
+  const ids = words.map((w) => w.id);
+  const attempts = ids.length ? await ReviewAttempt.findAll({ where: { wordId: { [Op.in]: ids } }, order: [["id", "ASC"]] }) : [];
+  const lessons = await Lesson.findAll({ order: [["date", "DESC"], ["id", "DESC"]] });
+  const practice = ids.length ? await PracticeAttempt.findAll({ where: { wordId: { [Op.in]: ids } }, order: [["id", "ASC"]] }) : [];
+  const sentences = (await Sentence.findAll({ attributes: ["id", "wrongCount"] })).map((x) => x.toJSON());
+  const report = progressReport(words.map((w) => w.toJSON()), attempts.map((a) => a.toJSON()), lessons.map((l) => l.toJSON()), practice.map((p) => p.toJSON()));
+  const facts = weeklyFacts(report, { sentences });
+  if (!(await takeTutorCall())) return res.status(429).json({ error: "Лимит тьютора на сегодня исчерпан" });
+  try {
+    const raw = await askGemini({ prompt: buildWeeklyPrompt(facts), schema: WEEKLY_SCHEMA });
+    const v = validateWeekly(raw);
+    if (!v.ok) return res.status(502).json({ error: `Тьютор ответил невнятно (${v.reason})` });
+    const note = await TutorNote.create({ kind: "weekly", forDate: today(), json: JSON.stringify({ ...v.value, facts: { total: facts.total, activeDays: facts.activeDays, retention: facts.retention } }) });
+    res.json({ ...JSON.parse(note.json), date: note.forDate, cached: false });
+  } catch (error) {
+    res.status(502).json({ error: `Тьютор не ответил: ${error.message}` });
+  }
+});
+
 app.post("/api/practice/attempts", async (req, res) => {
   const ok = req.body?.ok;
   if (typeof ok !== "boolean") return res.status(400).json({ error: "Нужно поле ok: true или false" });
@@ -679,14 +756,14 @@ app.post("/api/practice/attempts", async (req, res) => {
   if (Number.isInteger(sentenceId) && sentenceId > 0) {
     const sentence = await Sentence.findByPk(sentenceId);
     if (!sentence) return res.status(404).json({ error: "Предложение не найдено" });
-    if (!ok) { sentence.wrongCount += 1; await sentence.save(); }
+    if (!ok) { sentence.wrongCount += 1; sentence.lastGiven = clean(req.body?.given, 300); await sentence.save(); }
     return res.status(201).json({ sentenceId, wrongCount: sentence.wrongCount });
   }
   const wordId = Number(req.body?.wordId);
   if (!Number.isInteger(wordId)) return res.status(400).json({ error: "Нужен wordId или sentenceId" });
   const word = await Word.findByPk(wordId);
   if (!word) return res.status(404).json({ error: "Слово не найдено" });
-  const attempt = await PracticeAttempt.create({ wordId, formId: clean(req.body?.formId, 40), ok });
+  const attempt = await PracticeAttempt.create({ wordId, formId: clean(req.body?.formId, 40), ok, given: ok ? "" : clean(req.body?.given, 300) });
   res.status(201).json({ id: attempt.id });
 });
 

@@ -35,8 +35,8 @@ export const dueWords = (limit, lang) => request(`/api/words/due?limit=${limit}&
 export const aheadWords = (limit, lang) => request(`/api/words/ahead?limit=${limit}&lang=${lang}`);
 export const addWord = (word) => request("/api/words", json("POST", word));
 export const updateWord = (id, patch) => request(`/api/words/${id}`, json("PATCH", patch));
-export const reviewWord = (id, known, mode = "") =>
-  request(`/api/words/${id}/review`, json("PATCH", { known, mode }));
+export const reviewWord = (id, known, mode = "", given = "") =>
+  request(`/api/words/${id}/review`, json("PATCH", { known, mode, given }));
 export const saveImage = (id, url) =>
   request(`/api/words/${id}/image`, json("POST", { url }));
 export const drawImage = (id) =>
@@ -56,6 +56,8 @@ export const finishLesson = (id) => request(`/api/lessons/${id}/finish`, json("P
 export const listLessons = () => request("/api/lessons");
 export const preparePractice = (lang) => request(`/api/practice/prepare?lang=${lang}`, json("POST", {}));
 export const practiceSet = (limit, lang) => request(`/api/practice?limit=${limit}&lang=${lang}`);
-export const recordAttempt = (wordId, formId, ok, sentenceId = null) => request("/api/practice/attempts", json("POST", { wordId, formId, ok, sentenceId }));
+export const recordAttempt = (wordId, formId, ok, sentenceId = null, given = "") => request("/api/practice/attempts", json("POST", { wordId, formId, ok, sentenceId, given }));
 export const progress = (lang) => request(`/api/progress?lang=${lang}`);
 export const echoSet = (limit) => request(`/api/echo?limit=${limit}`);
+export const tutorMiss = (skip) => request(`/api/tutor/miss?skip=${skip}`);
+export const tutorWeekly = () => request("/api/tutor/weekly");

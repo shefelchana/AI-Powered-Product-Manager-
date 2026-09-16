@@ -650,3 +650,8 @@ button {
 .word-row-term { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .word-row-side { flex: 0 1 auto; max-width: 45%; }
 .word-row-tr { max-width: 100%; }
+
+/* Тьютор в блоке прогресса */
+.tutor-note, .tutor-miss { border: 1px solid #2b2f37; border-radius: 12px; padding: 0.75rem 0.9rem; margin: 0.75rem 0; }
+.tutor-note p, .tutor-miss p { margin: 0.35rem 0; }
+.tutor-pair { font-size: 1.15rem; }

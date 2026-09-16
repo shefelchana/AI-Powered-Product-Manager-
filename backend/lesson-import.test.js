@@ -7,7 +7,7 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { sequelize } from "./db.js";
 import { migrate } from "./migrate.js";
-import { Word, Example, Lesson } from "./models.js";
+import { Word, Example, Lesson, Sentence } from "./models.js";
 import { lessonCandidates, applyLessonImport, parseLessonJson } from "./lesson-import.js";
 
 before(async () => {
@@ -98,4 +98,23 @@ test("английское значение без перевода идёт в 
 test("выбор без единого кандидата — ошибка, урок не создаётся", async () => {
   await assert.rejects(() => applyLessonImport({ date: "2026-09-09" }, []), /нечего/);
   assert.equal(await Lesson.count({ where: { date: "2026-09-09" } }), 0);
+});
+
+test("ответ ученицы с сайта и отмеченное слово сохраняются; повторный импорт дописывает их в уже известное предложение", async () => {
+  const doc = { lesson: { date: "2026-09-16", title: "домашка", source: "hebreway", sourceId: "task-1" }, items: [],
+    sentences: [{ sourceId: "s1", he: "זה העניק משמעות חדשה לחיים שלי.", ru: "Это придало новый смысл.", myMistake: null }] };
+  const first = parseLessonJson(doc);
+  await applyLessonImport(first.lesson, [], first.sentences);
+  let row = await Sentence.findOne({ where: { sourceId: "s1" } });
+  assert.equal(row.myAnswer, ""); assert.equal(row.wrongCount, 0);
+  doc.sentences[0].myMistake = { answer: "זה ההניק משמעות חדשה לחיים שלי", mistakes: "העניק", hints: 0 };
+  const second = parseLessonJson(doc);
+  assert.equal(second.sentences[0].myAnswer, "זה ההניק משמעות חדשה לחיים שלי");
+  assert.equal(second.sentences[0].siteMistakes, "העניק");
+  const res = await applyLessonImport(second.lesson, [], second.sentences);
+  assert.equal(res.sentences, 0);
+  row = await Sentence.findOne({ where: { sourceId: "s1" } });
+  assert.equal(row.myAnswer, "זה ההניק משמעות חדשה לחיים שלי");
+  assert.equal(row.siteMistakes, "העניק");
+  assert.equal(row.wrongCount, 1);
 });

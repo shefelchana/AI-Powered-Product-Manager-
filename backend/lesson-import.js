@@ -69,6 +69,9 @@ export function parseLessonJson(input) {
       audioUrl: str(s.audio ?? s.audioUrl, 300),
       position: Number.isInteger(s.index) ? s.index : i + 1,
       wrong: Boolean(s.myMistake),
+      // Ответ ученицы на сайте и слово, отмеченное сайтом: материал для разбора тьютором.
+      myAnswer: str(s.myMistake && typeof s.myMistake === "object" ? s.myMistake.answer : "", MAX_TEXT),
+      siteMistakes: str(s.myMistake && typeof s.myMistake === "object" ? s.myMistake.mistakes : "", 300),
     }))
     .filter((s) => s.he && isHebrew(s.he))
     .slice(0, MAX_ITEMS);
@@ -201,7 +204,15 @@ export async function applyLessonImport(meta, picks, sentences = []) {
   for (const s of lines) {
     const where = s.sourceId ? { lessonId: lesson.id, sourceId: str(s.sourceId, 80) } : { lessonId: lesson.id, he: hebrew(s.he, MAX_TEXT) };
     const existing = await Sentence.findOne({ where });
-    if (existing) continue;
+    if (existing) {
+      // Повторный импорт: ответ с сайта мог появиться позже (домашку проверяют не сразу).
+      let changed = false;
+      if (s.myAnswer && !existing.myAnswer) { existing.myAnswer = str(s.myAnswer, MAX_TEXT); changed = true; }
+      if (s.siteMistakes && !existing.siteMistakes) { existing.siteMistakes = str(s.siteMistakes, 300); changed = true; }
+      if (s.wrong && existing.wrongCount === 0) { existing.wrongCount = 1; changed = true; }
+      if (changed) await existing.save();
+      continue;
+    }
     await Sentence.create({
       lessonId: lesson.id,
       sourceId: str(s.sourceId, 80),
@@ -212,6 +223,8 @@ export async function applyLessonImport(meta, picks, sentences = []) {
       audioUrl: str(s.audioUrl ?? s.audio, 300),
       position: Number.isInteger(s.position) ? s.position : 0,
       wrongCount: s.wrong ? 1 : 0,
+      myAnswer: str(s.myAnswer, MAX_TEXT),
+      siteMistakes: str(s.siteMistakes, 300),
     });
     stored += 1;
   }
