@@ -51,3 +51,18 @@ test("одно предложение — одна связь, даже если
   assert.deepEqual(res.matches.map((m) => [m.sentenceId, m.matched]), [[1, "הפר"]]);
   assert.ok(res.rejected.some((r) => r.token === "מפריע"));
 });
+
+// Ревью 16.09: термин без форм из трёх букв не должен цеплять слова с приставкой.
+test("голый термин: приставка снимается только от 4 букв стема", () => {
+  const cow = { id: 9, term: "פרה", forms: "" };
+  assert.deepEqual(sentencesFor(cow, [S(1, "היא מפרה את הדממה."), S(2, "יש הפרה של החוזה."), S(3, "פרה אחת בשדה.")]).map((m) => m.sentenceId), [3]);
+  const noun4 = { id: 10, term: "דממה", forms: "" };
+  assert.deepEqual(sentencesFor(noun4, [S(1, "היא מפרה את הדממה.")]).map((m) => m.matched), ["הדממה"]);
+});
+
+test("многословный термин: найденный отрезок — подстрока исходной фразы", () => {
+  const multi = { id: 11, term: "בלשון המעטה", forms: "" };
+  const he = "דבריו לא נכונים בלשון  המעטה.";
+  const [m] = sentencesFor(multi, [S(1, he)]);
+  assert.ok(he.includes(m.matched), m.matched);
+});

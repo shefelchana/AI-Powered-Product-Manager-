@@ -24,21 +24,24 @@ const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(
 // Фразы на карточке: свои и из уроков. У фразы преподавателя — его аудио и огласовки на месте текста.
 // Показываем не больше шести: сначала свои, потом урочные по порядку; остальное — в практике.
 const PHRASES_ON_CARD = 6;
-function Phrases({ word }) {
+function Phrases({ word, showRu = true }) {
   const rows = Array.isArray(word.exampleList) && word.exampleList.length > 0
     ? word.exampleList
     : exampleList(word).map((text) => ({ text, origin: "own" }));
   if (rows.length === 0) return null;
   const own = rows.filter((r) => r.origin === "own");
   const lesson = rows.filter((r) => r.origin !== "own");
-  const shown = [...own, ...lesson].slice(0, PHRASES_ON_CARD);
+  // Места делятся: свои и урочные по половине, остаток отдаётся тому, чего больше.
+  const half = Math.ceil(PHRASES_ON_CARD / 2);
+  const ownTake = Math.min(own.length, Math.max(half, PHRASES_ON_CARD - lesson.length));
+  const shown = [...own.slice(0, ownTake), ...lesson.slice(0, PHRASES_ON_CARD - ownTake)];
   return (
     <ul className="examples">
       {shown.map((r, i) => (
         <li key={r.id ?? i} dir="rtl" className={r.sentenceId ? "phrase-lesson" : ""}>
           {r.vocalized || r.text}
           {r.audioUrl ? <> <AudioButton file={r.audioUrl} /></> : null}
-          {r.sentenceId && r.ru ? <span className="muted phrase-ru" dir="ltr"> {r.ru}</span> : null}
+          {showRu && r.sentenceId && r.ru ? <span className="muted phrase-ru" dir="ltr"> {r.ru}</span> : null}
         </li>
       ))}
       {rows.length > shown.length && <li className="muted small" dir="ltr">ещё {rows.length - shown.length} в практике</li>}
@@ -1102,7 +1105,7 @@ function RevealCard({ word, onAnswer, listen }) {
           <SourceNote word={word} />
           <RootLine word={word} />
           <Family word={word} />
-          <Phrases word={word} />
+          <Phrases word={word} showRu={revealed >= 2} />
         </div>
       )}
 

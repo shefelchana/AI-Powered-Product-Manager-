@@ -23,7 +23,13 @@ export async function linkSentences({ words, sentences, log = null }) {
         if (!sameText.lessonId) sameText.lessonId = s.lessonId;
         await sameText.save();
       } else {
-        await Example.create({ wordId: word.id, text: s.he, origin: "lesson", lessonId: s.lessonId, timestamp: "", sentenceId: s.id, matched: m.matched });
+        try {
+          await Example.create({ wordId: word.id, text: s.he, origin: "lesson", lessonId: s.lessonId, timestamp: "", sentenceId: s.id, matched: m.matched });
+        } catch (error) {
+          // Гонка двух запусков: пара уже записана — не ошибка.
+          if (error?.name === "SequelizeUniqueConstraintError") continue;
+          throw error;
+        }
       }
       linked += 1;
       log?.({ wordId: word.id, term: word.term, sentenceId: s.id, formId: m.formId, prefix: m.prefix, matched: m.matched });

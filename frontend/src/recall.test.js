@@ -230,3 +230,8 @@ test("своя фраза без matched — пропуск по термину,
   assert.equal(p.kind, "translation");
   assert.equal(p.hint, "צריך ___ הוצאות");
 });
+
+test("matched не найден в тексте — пропуск по термину, а не тишина", () => {
+  const word = { term: "לצמצם", translation: "", lessonNote: "", exampleList: [{ text: "צריך לצמצם הוצאות", origin: "lesson", matched: "הצטמצם" }] };
+  assert.equal(promptFor(word).prompt, "צריך ___ הוצאות");
+});

@@ -62,9 +62,12 @@ const SOURCE_LABELS = {
 function clozeIn(rows, term) {
   for (const row of rows) {
     const phrase = typeof row === "string" ? row : String(row?.text ?? "");
-    const target = (typeof row === "object" && row?.matched) ? row.matched : term;
-    const at = phrase.indexOf(target);
-    if (at !== -1) return { prompt: phrase.slice(0, at) + "___" + phrase.slice(at + target.length), answer: target };
+    // Найденная форма — если она действительно есть в тексте, иначе сам термин.
+    const candidates = (typeof row === "object" && row?.matched) ? [row.matched, term] : [term];
+    for (const target of candidates) {
+      const at = phrase.indexOf(target);
+      if (at !== -1) return { prompt: phrase.slice(0, at) + "___" + phrase.slice(at + target.length), answer: target };
+    }
   }
   return null;
 }

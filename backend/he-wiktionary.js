@@ -46,7 +46,7 @@ export async function lookupHeWiktionary(word, { fetchImpl = fetch } = {}) {
   const lemma = lemmaFor(word);
   if (!lemma) return null;
   const url = `${API}?action=parse&page=${encodeURIComponent(lemma)}&prop=wikitext&format=json&formatversion=2`;
-  const res = await fetchImpl(url, { headers: { "User-Agent": "slova-s-zanyatiy/1.0 (personal Hebrew vocab app)" } });
+  const res = await fetchImpl(url, { headers: { "User-Agent": "slova-s-zanyatiy/1.0 (personal Hebrew vocab app)" }, signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`Викисловарь: HTTP ${res.status}`);
   const data = await res.json();
   if (data?.error) return null;                       // нет статьи — не ошибка, а «не нашли»

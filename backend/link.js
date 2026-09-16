@@ -30,7 +30,8 @@ function formsOf(word) {
 }
 
 // Термин без служебного предлога в конце («להסתכסך עם» → «להסתכסך»), токенами.
-const PREPOSITION_TAIL = new Set(["על", "ב", "ל", "עם", "את", "מ", "אל", "בין", "ב-", "ל-", "מ-"]);
+const PREPOSITION_TAIL = new Set(["על", "ב", "ל", "עם", "את", "מ", "אל", "בין"]);
+const MIN_BARE_STEM_WITH_PREFIX = 4; // у термина без форм приставку снимаем только от 4 букв: «פרה» ≠ «מפרה»
 function termTokens(term) {
   const toks = tokensOf(term);
   if (toks.length > 1 && PREPOSITION_TAIL.has(toks[toks.length - 1])) toks.pop();
@@ -61,7 +62,11 @@ export function sentencesFor(word, sentences, { withRejected = false } = {}) {
   const lookup = (token) => {
     const c = canon(token);
     if (table.has(c)) return { formId: table.get(c), prefix: "" };
-    if (c.length > MIN_STEM && PREFIXES.includes(c[0]) && table.has(c.slice(1))) return { formId: table.get(c.slice(1)), prefix: c[0] };
+    if (c.length > MIN_STEM && PREFIXES.includes(c[0]) && table.has(c.slice(1))) {
+      const formId = table.get(c.slice(1));
+      // Настоящая форма Pealim — приставка допустима; голый термин — только если стем длинный.
+      if (formId !== "term" || c.slice(1).length >= MIN_BARE_STEM_WITH_PREFIX) return { formId, prefix: c[0] };
+    }
     return null;
   };
 
@@ -76,7 +81,10 @@ export function sentencesFor(word, sentences, { withRejected = false } = {}) {
         const head = canon(toks[i]);
         const headOk = head === want[0] || (head.length > want[0].length && PREFIXES.includes(head[0]) && head.slice(1) === want[0]);
         if (headOk && want.slice(1).every((w, k) => canon(toks[i + 1 + k]) === w)) {
-          hit = { matched: toks.slice(i, i + want.length).join(" "), formId: "term", prefix: head === want[0] ? "" : head[0] };
+          // Найденный отрезок — из исходного текста (пробелы/макаф как есть), чтобы он был подстрокой фразы.
+          const span = new RegExp(toks.slice(i, i + want.length).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\u05BE]+"));
+          const found = String(s.he).replace(NIQQUD, "").match(span);
+          hit = { matched: found ? found[0] : toks.slice(i, i + want.length).join(" "), formId: "term", prefix: head === want[0] ? "" : head[0] };
         }
       }
     } else {

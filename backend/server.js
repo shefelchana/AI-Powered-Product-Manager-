@@ -12,6 +12,7 @@ import { Lesson, PracticeAttempt, Sentence, ReviewAttempt } from "./models.js";
 import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
 import { pickWordOfDay, reasonFor } from "./day.js";
+import crypto from "node:crypto";
 import { pickEcho } from "./echo.js";
 import { linkLesson, linkWord } from "./enrich.js";
 import { lookupHeWiktionary } from "./he-wiktionary.js";
@@ -610,11 +611,18 @@ app.get("/api/echo", async (req, res) => {
 // формы Pealim у глаголов без форм и толкование в пустое поле — ничего не перезаписывает.
 // Закрыто секретом ENRICH_TOKEN: прод без аутентификации, а тут запись и походы во внешние сайты.
 const ENRICH_PEALIM_LIMIT = 5;
+const ENRICH_DEFINITIONS_LIMIT = 8;
+const sameToken = (a, b) => {
+  const ha = crypto.createHash("sha256").update(String(a ?? "")).digest();
+  const hb = crypto.createHash("sha256").update(String(b ?? "")).digest();
+  return crypto.timingSafeEqual(ha, hb);
+};
 const GAP_MS = 800; // пауза между походами на внешние сайты
 app.post("/api/lessons/:id/enrich", async (req, res) => {
   const token = process.env.ENRICH_TOKEN || "";
   if (!token) return res.status(503).json({ error: "ENRICH_TOKEN не задан на сервере — сборка отключена" });
-  if (req.get("x-enrich-token") !== token) return res.status(401).json({ error: "нет доступа" });
+  if (!sameToken(req.get("x-enrich-token"), token)) return res.status(401).json({ error: "нет доступа" });
+  try {
   const lesson = await Lesson.findByPk(req.params.id);
   if (!lesson) return res.status(404).json({ error: "Урок не найден" });
 
@@ -638,9 +646,8 @@ app.post("/api/lessons/:id/enrich", async (req, res) => {
   const links = await linkLesson(lesson.id);
   report.linked = links.linked;
   report.rejected = links.rejected.length;
-  // 3. Толкование на иврите — только в пустое поле, «не нашли» помнится по дате.
-  for (const word of lessonWords) {
-    if (word.definition || word.definitionCheckedAt) continue;
+  // 3. Толкование на иврите — только в пустое поле, «не нашли» помнится по дате; не больше лимита за раз.
+  for (const word of lessonWords.filter((w) => !w.definition && !w.definitionCheckedAt).slice(0, ENRICH_DEFINITIONS_LIMIT)) {
     try {
       const found = await lookupHeWiktionary(word);
       word.definitionCheckedAt = new Date();
@@ -660,6 +667,9 @@ app.post("/api/lessons/:id/enrich", async (req, res) => {
     await new Promise((r) => setTimeout(r, GAP_MS));
   }
   res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: `сборка не удалась: ${error.message}` });
+  }
 });
 
 app.post("/api/practice/attempts", async (req, res) => {
