@@ -9,7 +9,7 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.goto(BASE); pg.wait_for_load_state("networkidle")
     pg.get_by_role("button", name="Повторять").first.click(); pg.wait_for_timeout(500)
-    pg.get_by_role("button", name="Фразы: формы, предлоги, отрицания").click(); pg.wait_for_timeout(1500)
+    pg.get_by_role("button", name="Фразы: диктанты, формы, отрицания").click(); pg.wait_for_timeout(1500)
     for i in range(12):
         if "на слух" in pg.locator(".prompt-label").inner_text(): break
         pg.get_by_role("button", name="Не помню").click(); pg.get_by_role("button", name="Дальше").click(); pg.wait_for_timeout(200)

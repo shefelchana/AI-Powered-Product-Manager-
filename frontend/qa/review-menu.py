@@ -9,7 +9,7 @@ with sync_playwright() as p:
     pg.locator(".nav button").nth(2).click(); pg.wait_for_timeout(800)
     visible = [b.inner_text() for b in pg.locator(".review-menu > button").all()]
     print("visible buttons:", visible)
-    assert len(visible) == 2, "на виду должно быть две кнопки"
+    assert 2 <= len(visible) <= 3, "на виду две кнопки (три, если к повторению больше трёх слов)"
     assert pg.locator(".more-ways[open]").count() == 0, "«Другие способы» раскрыты по умолчанию"
     pg.screenshot(path=f"{OUT}/review-menu.png")
     pg.locator("summary", has_text="Другие способы").click(); pg.wait_for_timeout(300)

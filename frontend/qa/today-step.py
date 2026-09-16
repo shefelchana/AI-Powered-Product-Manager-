@@ -12,9 +12,9 @@ with sync_playwright() as p:
     title = pg.locator(".today-title").inner_text(); text = pg.locator(".today").inner_text()
     print("today:", text.replace("\n", " / "))
     pg.screenshot(path=f"{OUT}/today-step.png")
-    pg.locator(".today button").click(); pg.wait_for_timeout(600)   # кнопка называется по шагу: «Повторять», «Открыть эхо»…
+    pg.locator(".today button.primary").click(); pg.wait_for_timeout(600)   # главная кнопка шага; «потом — …» тоже кнопка
     if title.startswith("Повторить:"):
-        assert pg.get_by_role("button", name="Фразы: формы, предлоги, отрицания").count() == 1, "не открылось меню повторения"
+        assert pg.get_by_role("button", name="Фразы: диктанты, формы, отрицания").count() == 1, "не открылось меню повторения"
         print("→ меню повторения открыто")
     elif title.startswith("Эхо"):
         assert "слушай" in pg.locator(".prompt-label").inner_text(); print("→ эхо открыто")
