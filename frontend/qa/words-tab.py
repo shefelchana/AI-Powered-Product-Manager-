@@ -10,7 +10,12 @@ with sync_playwright() as p:
     assert pg.locator(".words-search").count() == 1, "нет поиска"
     labels = [l.inner_text() for l in pg.locator(".words-section .field-label").all()]
     print("sections:", labels)
-    assert any(l.startswith("Нужен перевод") for l in labels), "нет секции «Нужен перевод»"
+    assert any(l.startswith("Нужен перевод") for l in labels) and any(l.startswith("С переводом") for l in labels), "секций нет"
+    # длинный термин: перевод не накладывается на иврит, страница не уезжает вбок
+    for r in pg.locator(".word-row").all():
+        t = r.locator(".word-row-term").bounding_box(); tr = r.locator(".word-row-tr").bounding_box()
+        if t and tr: assert tr["x"] + tr["width"] <= t["x"] + 1 or t["x"] + t["width"] <= tr["x"] + 1, f"наложение: {r.inner_text()[:40]}"
+    assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "горизонтальная прокрутка"
     # термин из двух слов — одной строкой
     term = pg.get_by_text("להתחרט על", exact=True).first
     box = term.bounding_box(); print("term box h:", box["height"])
@@ -31,11 +36,11 @@ with sync_playwright() as p:
     text = pg.locator(".done").inner_text() if pg.locator(".done").count() else pg.locator("body").inner_text()
     print("practice failure:", text.replace("\n", " / ")[:120])
     assert "Не получилось загрузить" in text and "Пока нечего тренировать" not in text
-    assert pg.get_by_role("button", name="Попробовать ещё раз").count() == 1
+    assert pg.get_by_role("button", name="Повторить").count() == 1
     pg.screenshot(path=f"{OUT}/practice-offline.png")
     pg.unroute("**/api/practice/**")
-    pg.get_by_role("button", name="Попробовать ещё раз").click(); pg.wait_for_timeout(2500)
-    assert pg.locator(".prompt-label").count() == 1 or "Пока нечего" in pg.locator("body").inner_text(), "повтор не сработал"
+    pg.get_by_role("button", name="Повторить").click(); pg.wait_for_timeout(2500)
+    assert pg.locator(".prompt-label").count() == 1, "повтор не перезагрузил практику"
     print("retry ok; pageerrors:", errors); assert errors == []
     b.close()
 print("WORDS TAB QA OK")

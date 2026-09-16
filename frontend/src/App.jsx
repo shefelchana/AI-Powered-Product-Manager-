@@ -514,6 +514,7 @@ function PracticeScreen({ lang, onFinished }) {
   useEffect(() => {
     let alive = true;
     setItems(null); setError(null); setNote("Готовлю формы…");
+    setIndex(0); setTyped(""); setResult(null);
     (async () => {
       try {
         const prepared = await preparePractice(lang);
@@ -557,7 +558,7 @@ function PracticeScreen({ lang, onFinished }) {
       <div className="done">
         <p className="done-title">Не получилось загрузить</p>
         <p className="error">{error}</p>
-        <button className="primary" onClick={() => setAttempt((n) => n + 1)}>Попробовать ещё раз</button>
+        <button className="primary" onClick={() => setAttempt((n) => n + 1)}>Повторить</button>
         <button className="quiet" onClick={onFinished}>Вернуться</button>
       </div>
     );
@@ -1407,6 +1408,7 @@ function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
         dir="auto"
         placeholder="Найти слово или перевод"
         aria-label="Поиск по словам"
+        autoCorrect="off" autoCapitalize="off" spellCheck={false}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
@@ -1419,7 +1421,7 @@ function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
       )}
       {rest.length > 0 && (
         <section className="words-section">
-          {needs.length > 0 && <p className="field-label">Все слова · {rest.length}</p>}
+          <p className="field-label">С переводом · {rest.length}</p>
           {rest.map(row)}
         </section>
       )}

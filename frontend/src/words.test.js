@@ -20,7 +20,9 @@ test("пустой запрос — все слова", () => {
 test("поиск по части термина и по переводу, без регистра", () => {
   assert.deepEqual(searchWords(W, "הפר").map((w) => w.id), [1]);
   assert.deepEqual(searchWords(W, "МОЛЧ").map((w) => w.id), [2]);
-  assert.deepEqual(searchWords(W, "сך").map((w) => w.id), []);
+  // Подстрока внутри слова тоже находит: «סך» есть в «להסתכסך».
+  assert.deepEqual(searchWords(W, "סך").map((w) => w.id), [5]);
+  assert.deepEqual(searchWords(W, "нет такого").map((w) => w.id), []);
 });
 
 test("огласовки не мешают: «שלום» находит «שָׁלוֹם», и наоборот", () => {

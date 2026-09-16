@@ -646,5 +646,7 @@ button {
 .words-search { margin: 0 0 0.75rem; font-size: 1rem; }
 .words-section { margin-bottom: 1rem; }
 .words-section .field-label { margin: 0.75rem 0 0.25rem; }
-.word-row-term { white-space: nowrap; flex-shrink: 0; }
-.word-row-tr { max-width: 11rem; }
+.word-row { overflow: hidden; }
+.word-row-term { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.word-row-side { flex: 0 1 auto; max-width: 45%; }
+.word-row-tr { max-width: 100%; }
