@@ -111,11 +111,23 @@ export async function lessonCandidates(doc) {
 
   const existing = await Word.findAll({ where: { term: { [Op.in]: unique.map((c) => c.term) } } });
   const byTerm = new Map(existing.map((w) => [w.term, w]));
+  // Почти-дубли: «מסוכסך» при уже записанном «מסוכסך עם» — это то же слово с предлогом.
+  // Кандидат переписывается на существующий термин, чтобы фраза ушла к нему, а не в новую карточку.
+  const missing = unique.filter((c) => !byTerm.has(c.term)).map((c) => c.term);
+  const near = missing.length ? await Word.findAll({ where: { [Op.or]: missing.map((t) => ({ term: { [Op.like]: `${t} %` } })) } }) : [];
+  for (const w of near) {
+    const asked = missing.find((t) => w.term.startsWith(`${t} `));
+    if (asked && !byTerm.has(asked)) byTerm.set(asked, w);
+  }
   return unique.map((c) => {
     const word = byTerm.get(c.term);
     const hasExample = Boolean(word && c.example && (word.exampleRows ?? []).some((e) => e.text === c.example));
+    const nearDup = Boolean(word && word.term !== c.term);
     return {
       ...c,
+      term: word ? word.term : c.term,
+      asked: c.term,
+      nearDup,
       exists: Boolean(word),
       wordId: word?.id ?? null,
       hasDefinition: Boolean(word && (word.definition || word.translation)),

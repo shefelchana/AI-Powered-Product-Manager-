@@ -130,3 +130,13 @@ test("итог с сайта: отвечено/с ошибками у урока
   l = await Lesson.findOne({ where: { recordingUrl: "https://hebreway.com/t/x1" } });
   assert.equal(l.siteAnswered, 9); assert.equal(l.siteWrong, 5);
 });
+
+test("почти-дубль: «מסוכסך» при существующем «מסוכסך עם» — кандидат указывает на существующее слово", async () => {
+  await Word.create({ term: "מסוכסך עם", translation: "в ссоре с кем-то" });
+  const doc = parseLessonJson({ lesson: { date: "2026-09-18" }, items: [{ term: "מסוכסך", meaning: "", example: "הוא מסוכסך עם כולם." }, { term: "חדש", meaning: "" }], sentences: [] });
+  const cands = await lessonCandidates(doc);
+  const dup = cands.find((c) => c.asked === "מסוכסך");
+  assert.equal(dup.exists, true); assert.equal(dup.nearDup, true); assert.equal(dup.term, "מסוכסך עם");
+  const fresh = cands.find((c) => c.asked === "חדש");
+  assert.equal(fresh.exists, false); assert.equal(fresh.nearDup, false); assert.equal(fresh.term, "חדש");
+});
