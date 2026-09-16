@@ -58,6 +58,8 @@ test("проверка ответа модели: about не из данных �
 test("дайджест: факты из отчёта без домыслов, проверка ответа", () => {
   const facts = weeklyFacts({ stages: { new: 10, learning: 20, holding: 5 }, retention: { asked: 4, correct: 3 }, activeDays: [{ active: true }, { active: false }], hard: [{ term: "להעניק", misses: 3 }], lessons: [{ date: "2026-09-14", holding: 2, total: 5 }] }, { sentences: [{ wrongCount: 1 }, { wrongCount: 0 }] });
   assert.equal(facts.total, 35); assert.equal(facts.activeDays, 1); assert.deepEqual(facts.hard, ["להעניק (3)"]); assert.equal(facts.siteWrong, 1);
+  const withSite = weeklyFacts({ stages: {}, site: [{ date: "2026-09-07", pct: 36, answered: 14 }, { date: "2026-09-09", pct: 80, answered: 10 }] });
+  assert.deepEqual(withSite.site, [{ date: "2026-09-07", wrongPct: 36, answered: 14 }, { date: "2026-09-09", wrongPct: 80, answered: 10 }]);
   assert.ok(buildWeeklyPrompt(facts).includes('"total":35'));
   assert.equal(validateWeekly({ holding: "Держится 5 слов.", breaking: "Ломается «להעניק».", focus: "Повтори эхо." }).ok, true);
   assert.equal(validateWeekly({ holding: "", breaking: "x", focus: "y" }).ok, false);

@@ -62,3 +62,14 @@ test("пустая колода не ломает отчёт", () => {
   const r = progressReport([], [], [], [], d("2026-09-12"));
   assert.equal(r.retention.asked, 0); assert.deepEqual(r.hard, []); assert.equal(r.activeDays.length, 14);
 });
+
+test("сайт ульпана: доля ошибок по заданиям, только отвеченные, по датам", () => {
+  const lessons = [
+    { id: 3, date: "2026-09-09", title: "Домашняя работа 09.09 · Hebreway", siteAnswered: 10, siteWrong: 8 },
+    { id: 2, date: "2026-09-07", title: "Домашняя работа 07.09 · Hebreway", siteAnswered: 14, siteWrong: 5 },
+    { id: 4, date: "2026-09-14", title: "Классная работа 14.09 · Hebreway", siteAnswered: 0, siteWrong: 0 },
+  ];
+  const r = progressReport([], [], lessons, []);
+  assert.deepEqual(r.site.map((s) => [s.date, s.answered, s.wrong, s.pct]), [["2026-09-07", 14, 5, 36], ["2026-09-09", 10, 8, 80]]);
+  assert.deepEqual(progressReport([], [], [], []).site, []);
+});

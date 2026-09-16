@@ -88,6 +88,9 @@ export const Lesson = sequelize.define("Lesson", {
   importedAt: { type: DataTypes.DATE, allowNull: true },
   // Пусто — урок идёт; всё добавленное привязывается к нему.
   finishedAt: { type: DataTypes.DATE, allowNull: true },
+  // Итог задания на сайте ульпана: отвечено предложений / из них с ошибкой (по последней попытке).
+  siteAnswered: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  siteWrong: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 });
 
 // Пример — строка с происхождением. Строгий режим должен знать, чья это

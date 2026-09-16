@@ -211,3 +211,9 @@ test("0012: попытки хранят ответ ученицы, предло�
   const s = await qi.describeTable("Sentences");
   assert.ok(s.myAnswer && s.siteMistakes && s.lastGiven);
 });
+
+test("0014: у урока есть итог с сайта — siteAnswered и siteWrong", async () => {
+  const db = await legacyDatabase(); await migrate(db);
+  const l = await db.getQueryInterface().describeTable("Lessons");
+  assert.ok(l.siteAnswered && l.siteWrong);
+});

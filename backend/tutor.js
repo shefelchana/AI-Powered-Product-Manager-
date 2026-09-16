@@ -178,6 +178,8 @@ export function weeklyFacts(report, { sentences = [] } = {}) {
     total: Object.values(stages).reduce((a, b) => a + (Number(b) || 0), 0),
     stages, retention: ret, activeDays, hard, siteWrong, siteTotal: sentences.length,
     lessons: (r.lessons ?? []).slice(0, 3).map((l) => ({ date: l.date, holding: l.holding, total: l.total })),
+    // Сайт ульпана: доля ошибок по последним заданиям — внешняя мера, по датам.
+    site: (r.site ?? []).slice(-4).map((x) => ({ date: x.date, wrongPct: x.pct, answered: x.answered })),
   };
 }
 
