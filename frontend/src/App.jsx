@@ -1212,7 +1212,7 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
 
 // ---------- список слов: правка, справка, удаление ----------
 
-function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds = [] }) {
+function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds = [], lessonDate = "" }) {
   const [draft, setDraft] = useState(word);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1250,6 +1250,10 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
 
   return (
     <div className="word-card">
+      <p className="muted small word-meta">
+        добавлено {formatDate(String(word.createdAt ?? "").slice(0, 10))}
+        {lessonDate ? ` · урок ${formatDate(lessonDate)}` : ""}
+      </p>
       <label className="field-label">Слово</label>
       <input
         dir="rtl"
@@ -1432,14 +1436,14 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
       )}
       {report.lessons.length > 0 && (
         <div className="lesson-list">
-          <p className="muted">По урокам — можно повторить слова любого занятия, без записи в расписание:</p>
+          <p className="muted">По дням — классная, домашняя и вписанное на уроке вместе; повторить любой день, без записи в расписание:</p>
           {report.lessons.slice(0, 6).map((l) => (
-            <div key={l.id} className="lesson-row">
+            <div key={l.date} className="lesson-row">
               <span>
-                {l.title.replace(/ · Hebreway$/, "") || l.date}
-                <span className="muted"> · держится {l.holding} из {l.total}{l.learned ? `, выучено ${l.learned}` : ""}</span>
+                <strong>Урок {formatDate(l.date)}</strong>
+                <span className="muted"> · слов {l.total}, держится {l.holding}{l.learned ? `, выучено ${l.learned}` : ""}</span>
               </span>
-              <button className="secondary small-btn" type="button" onClick={() => onLesson(l.id)}>Повторить</button>
+              <button className="secondary small-btn" type="button" onClick={() => onLesson(l.ids ?? [l.id])}>Повторить</button>
             </div>
           ))}
         </div>
@@ -1451,7 +1455,7 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
   );
 }
 
-function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
+function WordsScreen({ words, lessons = [], onChanged, canDraw = true, learnedIds = [] }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState("");
 
@@ -1468,6 +1472,7 @@ function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
       open={openId === word.id}
       onToggle={() => setOpenId(openId === word.id ? null : word.id)}
       onChanged={onChanged} canDraw={canDraw} learnedIds={learnedIds}
+      lessonDate={lessons.find((l) => l.id === word.lessonId)?.date ?? ""}
     />
   );
 
@@ -1639,7 +1644,7 @@ export default function App() {
           onPractice={() => setView("practice")}
           onEcho={() => setView("echo")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
-          progress={<ProgressBlock report={report} stats={{ phrases, pending }} tutor={Boolean(features.tutor)} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
+          progress={<ProgressBlock report={report} stats={{ phrases, pending }} tutor={Boolean(features.tutor)} onLesson={(ids) => startLessonReview(mine.filter((w) => ids.includes(w.lessonId)))} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}
@@ -1658,7 +1663,7 @@ export default function App() {
         />
       )}
       {view === "add" && <AddScreen onAdded={reload} />}
-      {view === "words" && <WordsScreen words={mine} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
+      {view === "words" && <WordsScreen words={mine} lessons={lessons} onChanged={reload} canDraw={features.draw} learnedIds={report?.learnedIds ?? []} />}
       {view === "review" && mode === "learn" && (
         <LearnScreen key={queue.map((w) => w.id).join(",")} queue={queue} pool={mine} ahead={ahead} onFinished={() => { setView("reviewmenu"); reload(); }} />
       )}

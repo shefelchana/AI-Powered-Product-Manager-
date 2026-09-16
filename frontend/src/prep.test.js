@@ -32,3 +32,16 @@ test("нет законченных уроков — берётся послед
   assert.deepEqual(lessonSummary(words, []).words, []);
   assert.equal(lessonSummary([], []).questions.length, 0);
 });
+
+test("слова урока — все за ту же дату: классная, домашняя и своя запись", () => {
+  const lessons = [
+    { id: 10, date: "2026-09-14", title: "Классная работа 14.09 · Hebreway", finishedAt: "x" },
+    { id: 11, date: "2026-09-14", title: "Домашняя работа 14.09 · Hebreway", finishedAt: "x" },
+    { id: 12, date: "2026-09-14", title: "", finishedAt: null },
+    { id: 7, date: "2026-09-09", title: "старый", finishedAt: "x" },
+  ];
+  const words = [{ id: 1, lessonId: 10 }, { id: 2, lessonId: 11 }, { id: 3, lessonId: 12 }, { id: 4, lessonId: 7 }];
+  const { lesson, words: ws } = lessonSummary(words, lessons);
+  assert.equal(lesson.date, "2026-09-14");
+  assert.deepEqual(ws.map((w) => w.id).sort(), [1, 2, 3]);
+});
