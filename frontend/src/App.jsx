@@ -6,6 +6,7 @@ import { audioSrc, dictationStage } from "./listen.js";
 import { ECHO_START, MAX_TAKE_SECONDS, echoReduce, micErrorKind, pickMimeType } from "./echo.js";
 import { lessonSummary, formatDate } from "./prep.js";
 import { todayInIsrael, todayStep } from "./plan.js";
+import { partitionWords, searchWords } from "./words.js";
 import { startRound, nextStep, applyResult, roundSummary } from "./learn.js";
 
 // Местная дата, не UTC: сервер считает день по Израилю, клиент должен совпадать.
@@ -508,9 +509,12 @@ function PracticeScreen({ lang, onFinished }) {
   const [result, setResult] = useState(null);
   const [note, setNote] = useState("Готовлю формы…");
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setItems(null); setError(null); setNote("Готовлю формы…");
+    setIndex(0); setTyped(""); setResult(null);
     (async () => {
       try {
         const prepared = await preparePractice(lang);
@@ -522,7 +526,7 @@ function PracticeScreen({ lang, onFinished }) {
       }
     })();
     return () => { alive = false; };
-  }, [lang]);
+  }, [lang, attempt]);
 
   const ex = items?.[index];
   // «Слушать до текста»: диктант начинается с прослушиваний без поля ввода.
@@ -549,6 +553,16 @@ function PracticeScreen({ lang, onFinished }) {
   }
 
   if (items === null) return <div className="review"><p className="muted">{note}</p></div>;
+  if (error && items.length === 0) {
+    return (
+      <div className="done">
+        <p className="done-title">Не получилось загрузить</p>
+        <p className="error">{error}</p>
+        <button className="primary" onClick={() => setAttempt((n) => n + 1)}>Повторить</button>
+        <button className="quiet" onClick={onFinished}>Вернуться</button>
+      </div>
+    );
+  }
   if (!ex) {
     return (
       <div className="done">
@@ -1368,28 +1382,49 @@ function ProgressBlock({ report, stats, onLesson }) {
 
 function WordsScreen({ words, onChanged, canDraw = true, learnedIds = [] }) {
   const [openId, setOpenId] = useState(null);
+  const [query, setQuery] = useState("");
 
   if (words.length === 0) {
     return <p className="muted">Слов пока нет. Начни с вкладки «Добавить».</p>;
   }
 
-  // Сначала то, у чего нет перевода: это и есть список дел. Потом новые.
-  const sorted = [...words].sort((a, b) => {
-    const byTranslation = Number(Boolean(a.translation)) - Number(Boolean(b.translation));
-    return byTranslation !== 0 ? byTranslation : b.id - a.id;
-  });
+  const found = searchWords(words, query);
+  const { needs, rest } = partitionWords(found);
+  const row = (word) => (
+    <WordRow
+      key={word.id}
+      word={word}
+      open={openId === word.id}
+      onToggle={() => setOpenId(openId === word.id ? null : word.id)}
+      onChanged={onChanged} canDraw={canDraw} learnedIds={learnedIds}
+    />
+  );
 
   return (
     <div>
-      {sorted.map((word) => (
-        <WordRow
-          key={word.id}
-          word={word}
-          open={openId === word.id}
-          onToggle={() => setOpenId(openId === word.id ? null : word.id)}
-          onChanged={onChanged} canDraw={canDraw} learnedIds={learnedIds}
-        />
-      ))}
+      <input
+        className="term-input words-search"
+        type="search"
+        dir="auto"
+        placeholder="Найти слово или перевод"
+        aria-label="Поиск по словам"
+        autoCorrect="off" autoCapitalize="off" spellCheck={false}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {found.length === 0 && <p className="muted">Ничего не нашлось по «{query.trim()}»</p>}
+      {needs.length > 0 && (
+        <section className="words-section">
+          <p className="field-label">Нужен перевод · {needs.length}</p>
+          {needs.map(row)}
+        </section>
+      )}
+      {rest.length > 0 && (
+        <section className="words-section">
+          <p className="field-label">С переводом · {rest.length}</p>
+          {rest.map(row)}
+        </section>
+      )}
     </div>
   );
 }

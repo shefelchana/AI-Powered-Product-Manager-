@@ -641,3 +641,12 @@ button {
 .examples .phrase-lesson { margin-bottom: 0.35rem; }
 .examples .phrase-ru { display: block; font-size: 0.85rem; }
 .examples .listen-again { font-size: 1.1rem; padding: 0.1rem 0.45rem; vertical-align: middle; }
+
+/* Вкладка «Слова»: поиск, секции, термин одной строкой */
+.words-search { margin: 0 0 0.75rem; font-size: 1rem; }
+.words-section { margin-bottom: 1rem; }
+.words-section .field-label { margin: 0.75rem 0 0.25rem; }
+.word-row { overflow: hidden; }
+.word-row-term { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.word-row-side { flex: 0 1 auto; max-width: 45%; }
+.word-row-tr { max-width: 100%; }
