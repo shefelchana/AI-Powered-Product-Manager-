@@ -201,3 +201,13 @@ test("0011: у примера есть sentenceId и matched, у слова — 
   assert.ok(idx.some((i) => i.name === "examples_word_sentence" && i.unique), "уникальный индекс");
   await migrate(db); // повторный прогон — без ошибок
 });
+
+test("0012: попытки хранят ответ ученицы, предложения — ответ с сайта, отмеченное слово и последний промах", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  assert.ok((await qi.describeTable("PracticeAttempts")).given);
+  assert.ok((await qi.describeTable("ReviewAttempts")).given);
+  const s = await qi.describeTable("Sentences");
+  assert.ok(s.myAnswer && s.siteMistakes && s.lastGiven);
+});

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, echoSet, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
+import { addExample, addWord, aheadWords, currentLesson, deleteWord, drawImage, dueWords, echoSet, tutorMiss, tutorWeekly, finishLesson, fromPealim, listLessons, startLesson, listWords, practiceSet, preparePractice, progress, recordAttempt, reviewWord, updateWord, wordFamily, wordOfDay } from "./api.js";
 import { canSpeak, speak, voicesFor } from "./speech.js";
 import { choicesFor, matches, missHint, promptFor } from "./recall.js";
 import { audioSrc, dictationStage } from "./listen.js";
@@ -540,7 +540,7 @@ function PracticeScreen({ lang, onFinished }) {
     event.preventDefault();
     const ok = matches(typed, ex.answer);
     setResult(ok ? "ok" : "miss");
-    try { await recordAttempt(ex.wordId, ex.formId, ok, ex.sentenceId ?? null); } catch { /* журнал — не повод останавливать практику */ }
+    try { await recordAttempt(ex.wordId, ex.formId, ok, ex.sentenceId ?? null, ok ? "" : typed); } catch { /* журнал — не повод останавливать практику */ }
   }
 
   function next() {
@@ -1055,14 +1055,14 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
           </p>
 
           {result === "gaveup" ? (
-            <button className="primary" onClick={() => onAnswer(false)}>Дальше</button>
+            <button className="primary" onClick={() => onAnswer(false, typed)}>Дальше</button>
           ) : (
             <div className="verdict-actions">
               {/* Отделяем незнание от промаха чтения — иначе дислексия
                   превращает каждую описку в «не знаю». */}
               {/* «Не знала» стоит первой намеренно: зелёная кнопка сверху
                   подталкивала бы засчитывать себе знание не глядя. */}
-              <button className="answer-no" onClick={() => onAnswer(false)}>Не знала</button>
+              <button className="answer-no" onClick={() => onAnswer(false, typed)}>Не знала</button>
               <button className="answer-yes" onClick={() => onAnswer(true)}>Опечатка — я знала</button>
               <button className="quiet" onClick={onRequeue}>Показать ещё раз</button>
               <ImageSuggestion word={word} />
@@ -1158,12 +1158,13 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
     );
   }
 
-  async function answer(known) {
+  async function answer(known, given = "") {
     setError(null);
     try {
       // Повторение к уроку коробки не трогает: это прогон, а не расписание.
       // Вне расписания ответ тоже уходит: сервер пишет журнал и сам не двигает коробку на «знаю».
-      if (!practice) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode);
+      // Что было написано при промахе — тоже: это материал для разбора тьютором.
+      if (!practice) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode, known ? "" : given);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -1327,13 +1328,73 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
 // Прогресс без стриков: куда движется колода, что держится через неделю,
 // что не держится, по урокам, в какие дни повторяла.
 const STAGE_ORDER = [["new", "новое"], ["day1", "через день"], ["day3", "через 3 дня"], ["week", "через неделю"], ["settling", "закрепляется"], ["learned", "выучено"]];
-function ProgressBlock({ report, stats, onLesson }) {
+// ---------- тьютор ----------
+// Дайджест недели: цифры считает приложение, тьютор формулирует; кэш 7 дней на сервере.
+function TutorWeekly() {
+  const [note, setNote] = useState(undefined);
+  useEffect(() => {
+    let alive = true;
+    tutorWeekly().then((n) => { if (alive) setNote(n); }).catch((e) => { if (alive) setNote({ error: e.message }); });
+    return () => { alive = false; };
+  }, []);
+  if (note === undefined) return <p className="muted small">тьютор думает над неделей…</p>;
+  if (note.error) return <p className="muted small">тьютор: {note.error}</p>;
+  return (
+    <div className="tutor-note">
+      <p className="field-label">Тьютор о неделе · {formatDate(note.date)}</p>
+      <p>{note.holding}</p>
+      <p>{note.breaking}</p>
+      <p><strong>Фокус:</strong> {note.focus}</p>
+    </div>
+  );
+}
+
+const TYPE_RU = { spelling: "написание", binyan: "биньян", preposition: "предлог", article: "артикль", word_order: "порядок слов", missing_word: "пропущено слово", extra_word: "лишнее слово", agreement: "согласование", not_an_error: "не ошибка", other: "другое" };
+
+// Разбор промахов: по одному, «ещё один» — следующий. Правило отвечает сразу, модель — по лимиту.
+function TutorMisses() {
+  const [skip, setSkip] = useState(0);
+  const [item, setItem] = useState(undefined);
+  useEffect(() => {
+    let alive = true;
+    setItem(undefined);
+    tutorMiss(skip).then((r) => { if (alive) setItem(r); }).catch((e) => { if (alive) setItem({ error: e.message }); });
+    return () => { alive = false; };
+  }, [skip]);
+  if (item === undefined) return <p className="muted small">разбираю промах…</p>;
+  if (item.error) return <p className="muted small">тьютор: {item.error}</p>;
+  if (!item.miss) return <p className="muted small">{skip === 0 ? "Промахов с текстом ответа пока нет — они появятся после практики." : "Больше промахов нет."}</p>;
+  const { miss, explanation, note } = item;
+  const next = () => setSkip((item.skip ?? skip) + 1);   // сервер мог перескочить промахи, которые нечем объяснить
+  return (
+    <div className="tutor-miss">
+      <p className="field-label">Разбор промаха{explanation ? ` · ${TYPE_RU[explanation.type] ?? explanation.type}` : ""}</p>
+      {note && explanation && <p className="muted small">{note}</p>}
+      <p dir="rtl" className="tutor-pair"><span className="muted">ты:</span> {miss.given}</p>
+      <p dir="rtl" className="tutor-pair"><span className="muted">надо:</span> {miss.expected}</p>
+      {miss.ru && <p className="muted small">{miss.ru}</p>}
+      {explanation ? (
+        <>
+          <p>{explanation.why}</p>
+          <p><strong>Приём:</strong> {explanation.tip}</p>
+          <p className="muted small">{explanation.source === "rule" ? "по правилу" : "тьютор (модель)"}</p>
+        </>
+      ) : (
+        <p className="muted small">{note}</p>
+      )}
+      <button className="secondary small-btn" type="button" onClick={next}>Ещё один</button>
+    </div>
+  );
+}
+
+function ProgressBlock({ report, stats, onLesson, tutor = false }) {
+  const [open, setOpen] = useState(false);
   if (!report) return null;
   const total = Object.values(report.stages).reduce((a, b) => a + b, 0) || 1;
   const pct = (n) => Math.round((n / total) * 100);
   const ret = report.retention;
   return (
-    <details className="progress-block">
+    <details className="progress-block" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>Прогресс</summary>
       <div className="stage-bar" aria-hidden="true">
         {STAGE_ORDER.map(([k]) => report.stages[k] > 0 && <span key={k} className={`stage-seg stage-${k}`} style={{ width: `${pct(report.stages[k])}%` }} />)}
@@ -1354,6 +1415,9 @@ function ProgressBlock({ report, stats, onLesson }) {
         {report.activeDays.map((d) => <span key={d.date} className={d.active ? "dot on" : "dot"} title={d.date} />)}
         <span className="muted"> дни с повторением, две недели</span>
       </p>
+      {tutor && open && <TutorWeekly />}
+      {tutor && open && <TutorMisses />}
+      {tutor && open && <p className="muted small">Тьютор: твои ответы и цифры прогресса уходят в Gemini (Google) только для разбора; в колоду тьютор не пишет.</p>}
       {report.hard.length > 0 && (
         <p className="muted hard-words">Не держится:{" "}
           {report.hard.map((h) => <span key={h.id} className="chip"><bdi dir="rtl">{h.term}</bdi> <small>{h.misses}</small></span>)}
@@ -1464,7 +1528,7 @@ export default function App() {
   useEffect(() => {
     fetch("/api/health")
       .then((res) => res.json())
-      .then((data) => { setDb(data.db); drawAvailable = Boolean(data.features?.draw); setFeatures({ draw: drawAvailable }); })
+      .then((data) => { setDb(data.db); drawAvailable = Boolean(data.features?.draw); setFeatures({ draw: drawAvailable, tutor: Boolean(data.features?.tutor) }); })
       .catch(() => setDb(""));
   }, []);
 
@@ -1568,7 +1632,7 @@ export default function App() {
           onPractice={() => setView("practice")}
           onEcho={() => setView("echo")}
           prep={<PrepBlock words={mine} lessons={lessons} onStart={startLessonReview} />}
-          progress={<ProgressBlock report={report} stats={{ phrases, pending }} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
+          progress={<ProgressBlock report={report} stats={{ phrases, pending }} tutor={Boolean(features.tutor)} onLesson={(id) => startLessonReview(mine.filter((w) => w.lessonId === id))} />}
         />
       )}
       {view === "practice" && <PracticeScreen lang={lang} onFinished={() => { setView("reviewmenu"); reload(); }} />}

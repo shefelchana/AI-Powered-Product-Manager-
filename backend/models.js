@@ -121,6 +121,8 @@ export const PracticeAttempt = sequelize.define("PracticeAttempt", {
   wordId: { type: DataTypes.INTEGER, allowNull: false },
   formId: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "" },
   ok: { type: DataTypes.BOOLEAN, allowNull: false },
+  // Что было написано при промахе — материал для разбора тьютором.
+  given: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
 });
 PracticeAttempt.belongsTo(Word, { foreignKey: "wordId" });
 
@@ -135,6 +137,11 @@ export const Sentence = sequelize.define("Sentence", {
   audioUrl: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   position: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   wrongCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  // Ответ ученицы на сайте ульпана и слово, которое сайт отметил как ошибку.
+  myAnswer: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+  siteMistakes: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
+  // Последний промах в приложении по этому предложению (диктант/отрицание/предложение).
+  lastGiven: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
 });
 Sentence.belongsTo(Lesson, { foreignKey: "lessonId" });
 Lesson.hasMany(Sentence, { foreignKey: "lessonId" });
@@ -145,10 +152,22 @@ Word.addScope("defaultScope", {
   include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]], include: [{ model: Sentence, as: "sentenceRef", attributes: ["id", "heVocalized", "audioUrl", "ru"] }] }],
 }, { override: true });
 
+// Тьютор: дневной счётчик вызовов модели и кэш заметок (дайджест недели).
+export const TutorCall = sequelize.define("TutorCall", {
+  day: { type: DataTypes.STRING(10), allowNull: false, unique: true },
+  count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+});
+export const TutorNote = sequelize.define("TutorNote", {
+  kind: { type: DataTypes.STRING(20), allowNull: false },
+  forDate: { type: DataTypes.STRING(10), allowNull: false },
+  json: { type: DataTypes.TEXT, allowNull: false, defaultValue: "{}" },
+});
+
 // Ответ на повторении: журнал для удержания и точности по неделям.
 export const ReviewAttempt = sequelize.define("ReviewAttempt", {
   wordId: { type: DataTypes.INTEGER, allowNull: false },
   known: { type: DataTypes.BOOLEAN, allowNull: false },
+  given: { type: DataTypes.STRING(300), allowNull: false, defaultValue: "" },
   mode: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "" },
   boxBefore: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
   boxAfter: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
