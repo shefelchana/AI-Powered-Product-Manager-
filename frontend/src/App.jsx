@@ -1280,12 +1280,20 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [focusTr, setFocusTr] = useState(false);
 
   // Слово могло измениться на сервере — например, значение пришло из Pealim.
   // Без этого в полях остаётся старый черновик и следующее «Сохранить»
   // затирает только что полученное.
-  useEffect(() => { setDraft(word); }, [word.id, word.updatedAt]);
+  useEffect(() => {
+    // В режиме правки набранное не затираем: с сервера подтягиваем только пустые поля.
+    setDraft((d) => (editing && d && d.id === word.id
+      ? { ...word, term: d.term || word.term, translation: d.translation || word.translation, definition: d.definition || word.definition }
+      : word));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [word.id, word.updatedAt]);
   useEffect(() => { if (!open) { setEditing(false); setConfirming(false); } }, [open]);
+  useEffect(() => { setConfirming(false); setError(null); if (!editing) setFocusTr(false); }, [editing]);
 
   async function run(action, { close = false } = {}) {
     setBusy(true);
@@ -1329,8 +1337,8 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
         <p className="view-term" dir={dirOf(word.lang)}>{word.term} <SpeakButton text={word.term} lang={word.lang} /></p>
         {word.translation
           ? <p className="translation" dir="ltr">{word.translation}</p>
-          : <button className="secondary small-btn" type="button" onClick={() => setEditing(true)}>Добавить перевод</button>}
-        {word.definition && <p className="definition" dir="rtl">{word.definition}</p>}
+          : <button className="secondary small-btn" type="button" onClick={() => { setEditing(true); setFocusTr(true); }}>Добавить перевод</button>}
+        {word.definition && <p className="definition" dir={dirOf(word.lang)}>{word.definition}</p>}
         <SourceNote word={word} />
         <RootLine word={word} />
         <Family word={word} />
@@ -1361,6 +1369,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
       <input
         id={`tr-${word.id}`}
         dir="ltr"
+        autoFocus={focusTr}
         value={draft.translation}
         onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
       />
@@ -1381,7 +1390,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
           <WordImage word={word} />
           {/* Один способ: приложение рисует образ по переводу. Поиск и ручной адрес
               ушли — три кнопки на одно действие делали картинку слишком дорогой. */}
-          <button className="secondary" disabled={busy || !(word.translation || word.definition)} onClick={() => run(() => drawImage(word.id))}>
+          <button className="secondary" type="button" disabled={busy || !(draft.translation || draft.definition)} onClick={() => run(() => drawImage(word.id))}>
             {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
           </button>
         </>
@@ -1390,6 +1399,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
       <div className="row-actions">
         <button
           className="primary"
+          type="button"
           disabled={busy}
           onClick={() =>
             run(() =>
@@ -1402,19 +1412,20 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
         >
           Сохранить
         </button>
-        <button className="secondary" disabled={busy} onClick={() => run(() => fromPealim(word.id))}>
+        <button className="secondary" type="button" disabled={busy} onClick={() => run(() => fromPealim(word.id))}>
           Из Pealim
         </button>
         <button className="quiet" type="button" disabled={busy} onClick={() => { setDraft(word); setEditing(false); setConfirming(false); }}>Отмена</button>
       </div>
       <div className="row-actions">
         {confirming ? (
-          <button className="danger" disabled={busy} onClick={() => run(() => deleteWord(word.id))}>
+          <button className="danger" type="button" disabled={busy} onClick={() => run(() => deleteWord(word.id))}>
             Точно удалить
           </button>
         ) : (
-          <button className="quiet danger-text" onClick={() => setConfirming(true)}>Удалить слово</button>
+          <button className="quiet danger-text" type="button" onClick={() => setConfirming(true)}>Удалить слово</button>
         )}
+        <button className="quiet" type="button" onClick={onToggle}>Свернуть</button>
       </div>
       {error && <p className="error">{error}</p>}
     </div>

@@ -17,13 +17,25 @@ with sync_playwright() as p:
     pg.get_by_role("button", name="Изменить").click(); pg.wait_for_timeout(300)
     assert pg.locator(".word-card input").count() >= 2, "форма не открылась"
     pg.screenshot(path=f"{OUT}/card-edit.png", full_page=True)
-    tr = pg.locator(".word-card input").nth(1); old = tr.input_value(); tr.fill(old + " ✓")
-    pg.get_by_role("button", name="Сохранить").click(); pg.wait_for_timeout(1200)
-    if pg.locator(".word-card").count() == 0: pg.locator(".word-row").first.click(); pg.wait_for_timeout(400)
-    assert pg.locator(".word-card input").count() == 0, "после сохранения не вернулись в просмотр"
-    assert "✓" in pg.locator(".word-card").inner_text(), "правка не видна"
-    pg.get_by_role("button", name="Изменить").click(); pg.wait_for_timeout(200)
-    pg.locator(".word-card input").nth(1).fill(old); pg.get_by_role("button", name="Сохранить").click(); pg.wait_for_timeout(1000)
+    tr = pg.locator(".word-card input").nth(1); old = tr.input_value()
+    try:
+        # взвести удаление, сохранить, снова открыть форму: «Точно удалить» не должно остаться взведённым
+        pg.get_by_role("button", name="Удалить слово").click(); pg.wait_for_timeout(100)
+        assert pg.get_by_role("button", name="Точно удалить").count() == 1
+        tr.fill(old + " ✓")
+        pg.get_by_role("button", name="Сохранить").click(); pg.wait_for_timeout(1200)
+        if pg.locator(".word-card").count() == 0: pg.locator(".word-row").first.click(); pg.wait_for_timeout(400)
+        assert pg.locator(".word-card input").count() == 0, "после сохранения не вернулись в просмотр"
+        assert "✓" in pg.locator(".word-card").inner_text(), "правка не видна"
+        pg.get_by_role("button", name="Изменить").click(); pg.wait_for_timeout(200)
+        assert pg.get_by_role("button", name="Точно удалить").count() == 0, "подтверждение удаления пережило сохранение"
+        pg.get_by_role("button", name="Отмена").click(); pg.wait_for_timeout(200)
+        assert pg.locator(".word-card input").count() == 0
+    finally:
+        if pg.locator(".word-card input").count() == 0:
+            if pg.locator(".word-card").count() == 0: pg.locator(".word-row").first.click(); pg.wait_for_timeout(300)
+            pg.get_by_role("button", name="Изменить").click(); pg.wait_for_timeout(200)
+        pg.locator(".word-card input").nth(1).fill(old); pg.get_by_role("button", name="Сохранить").click(); pg.wait_for_timeout(1000)
     print("pageerrors:", errors); assert errors == []
     b.close()
 print("CARD VIEW QA OK")
