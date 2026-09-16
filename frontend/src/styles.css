@@ -655,3 +655,5 @@ button {
 .tutor-note, .tutor-miss { border: 1px solid #2b2f37; border-radius: 12px; padding: 0.75rem 0.9rem; margin: 0.75rem 0; }
 .tutor-note p, .tutor-miss p { margin: 0.35rem 0; }
 .tutor-pair { font-size: 1.15rem; }
+
+.site-trend small { opacity: 0.8; }

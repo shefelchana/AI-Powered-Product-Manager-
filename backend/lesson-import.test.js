@@ -118,3 +118,15 @@ test("ответ ученицы с сайта и отмеченное слово
   assert.equal(row.siteMistakes, "העניק");
   assert.equal(row.wrongCount, 1);
 });
+
+test("итог с сайта: отвечено/с ошибками у урока, обновляется при повторном сборе", async () => {
+  const doc = { lesson: { date: "2026-09-17", title: "домашка", recordingUrl: "https://hebreway.com/t/x1" }, items: [], sentences: [{ sourceId: "z1", he: "שלום לכולם.", ru: "…" }], siteStats: { answered: 0, wrong: 0 } };
+  const a = parseLessonJson(doc); await applyLessonImport(a.lesson, [], a.sentences);
+  let l = await Lesson.findOne({ where: { recordingUrl: "https://hebreway.com/t/x1" } });
+  assert.equal(l.siteAnswered, 0);
+  doc.siteStats = { answered: 9, wrong: 5 };
+  const b = parseLessonJson(doc); assert.equal(b.lesson.siteAnswered, 9);
+  await applyLessonImport(b.lesson, [], b.sentences);
+  l = await Lesson.findOne({ where: { recordingUrl: "https://hebreway.com/t/x1" } });
+  assert.equal(l.siteAnswered, 9); assert.equal(l.siteWrong, 5);
+});

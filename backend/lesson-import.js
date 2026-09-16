@@ -81,6 +81,8 @@ export function parseLessonJson(input) {
       date: isDate(lesson.date) ? lesson.date : today(),
       title: str(lesson.title, 200),
       recordingUrl: str(lesson.recordingUrl, 2048),
+      siteAnswered: Math.max(0, parseInt(raw.siteStats?.answered, 10) || 0),
+      siteWrong: Math.max(0, parseInt(raw.siteStats?.wrong, 10) || 0),
     },
     items,
     corrections,
@@ -134,12 +136,20 @@ async function lessonFor(meta) {
       found.importedAt = new Date();
       if (!found.title && meta?.title) found.title = str(meta.title, 200);
       if (!found.recordingUrl && meta?.recordingUrl) found.recordingUrl = str(meta.recordingUrl, 2048);
-      await found.save();
     }
+    // Итог с сайта обновляется при каждом сборе: домашку доделывают позже.
+    const answered = Math.max(0, parseInt(meta?.siteAnswered, 10) || 0);
+    if (answered > 0 && (answered !== found.siteAnswered || (parseInt(meta?.siteWrong, 10) || 0) !== found.siteWrong)) {
+      found.siteAnswered = answered;
+      found.siteWrong = Math.max(0, parseInt(meta?.siteWrong, 10) || 0);
+    }
+    if (found.changed()) await found.save();
     return found;
   }
   return Lesson.create({
     date,
+    siteAnswered: Math.max(0, parseInt(meta?.siteAnswered, 10) || 0),
+    siteWrong: Math.max(0, parseInt(meta?.siteWrong, 10) || 0),
     title: str(meta?.title, 200),
     recordingUrl: str(meta?.recordingUrl, 2048),
     importedAt: new Date(),

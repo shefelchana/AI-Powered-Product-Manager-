@@ -1415,6 +1415,13 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
         {report.activeDays.map((d) => <span key={d.date} className={d.active ? "dot on" : "dot"} title={d.date} />)}
         <span className="muted"> дни с повторением, две недели</span>
       </p>
+      {Array.isArray(report.site) && report.site.length > 0 && (
+        <p className="muted site-trend">Ошибки на сайте ульпана:{" "}
+          {report.site.slice(-5).map((s, i) => (
+            <span key={s.id}>{i > 0 ? " → " : ""}<strong>{s.pct}%</strong> <small>{formatDate(s.date)}{/Классная/.test(s.title) ? " кл." : ""}</small></span>
+          ))}
+        </p>
+      )}
       {tutor && open && <TutorWeekly />}
       {tutor && open && <TutorMisses />}
       {tutor && open && <p className="muted small">Тьютор: твои ответы и цифры прогресса уходят в Gemini (Google) только для разбора; в колоду тьютор не пишет.</p>}

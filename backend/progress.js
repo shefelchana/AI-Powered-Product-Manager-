@@ -62,5 +62,10 @@ export function progressReport(words, attempts, lessons, practice, now = new Dat
     label: FORM_LABELS[s.formId]?.ru ?? (s.formId.includes(":") ? s.formId.replace(":", " + ") : s.formId),
   }));
 
-  return { stages, learnedIds: [...learnedIds], retention, hard, lessons: byLesson, activeDays, forms };
+  // Сайт ульпана: доля ошибок по заданиям, по датам — единственная внешняя мера.
+  const site = (Array.isArray(lessons) ? lessons : [])
+    .filter((l) => Number(l.siteAnswered) > 0)
+    .map((l) => ({ id: l.id, date: l.date, title: l.title || "", answered: Number(l.siteAnswered), wrong: Number(l.siteWrong) || 0, pct: Math.round((100 * (Number(l.siteWrong) || 0)) / Number(l.siteAnswered)) }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id);
+  return { stages, learnedIds: [...learnedIds], retention, hard, lessons: byLesson, activeDays, forms, site };
 }
