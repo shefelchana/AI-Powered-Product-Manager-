@@ -41,27 +41,33 @@ export function acceptedForms(word) {
   return { forms: out, head };
 }
 
-const tokens = (s) => String(s ?? "").replace(/[֑-ׇ]/g, "").split(/[\s.,!?;:()"'«»\-–—]+/).filter(Boolean);
+const tokens = (s) => String(s ?? "").replace(/[\u0591-\u05C7]/g, "").split(/[\s.,!?;:()"'«»\-–—]+/).filter(Boolean);
+const PREFIX_LETTERS = ["ו", "ש", "כ", "ה", "ב", "ל", "מ"];
+const SUFFIXES = ["", "ים", "ות", "ה", "ת", "י", "ית", "יות"];
 
-export function containsWord(he, word) {
+// Какая форма слова стоит в фразе (нормализованный токен) или null. Приставки снимаются по одной,
+// до трёх (ומהדממה). У слова с формами Pealim принимаются только они — «להפרה» не форма; у слова
+// без форм — термин и термин с окончанием числа/рода (у ж. р. на ה окончание уходит: דממה → דממות).
+export function matchedForm(he, word) {
   const { forms, head } = acceptedForms(word);
-  const toks = tokens(he).map(normalize);
+  const hasForms = Object.keys(formsOf(word)).length > 0;
   const text = normalize(he);
-  if (head.includes(" ") && text.includes(head)) return true;
-  const SUFFIXES = ["", "ים", "ות", "ה", "ת", "י", "ית", "יות"];
-  // «דממה» → «דממות»: у женского рода на ה окончание ה уходит перед ות/ים.
-  const stems = head && !head.includes(" ") && head.length >= 3 ? [head, ...(head.endsWith("ה") && head.length >= 4 ? [head.slice(0, -1)] : [])] : [];
+  if (head.includes(" ")) return text.includes(head) ? head : null;
+  const stems = !hasForms && head.length >= 3 ? [head, ...(head.endsWith("ה") && head.length >= 4 ? [head.slice(0, -1)] : [])] : [];
   const isHeadForm = (t) => stems.some((st) => t.startsWith(st) && SUFFIXES.includes(t.slice(st.length)) && (st === head || t.length > st.length));
-  for (const t of toks) {
-    if (forms.has(t) || isHeadForm(t)) return true;
-    for (const p of ["ו", "ה", "ב", "ל", "מ", "ש", "כ"]) {
-      if (!t.startsWith(p)) continue;
-      const rest = t.slice(1);
-      if (forms.has(rest) || isHeadForm(rest)) return true;   // «הדממות» = ה + דממ + ות
+  // К глагольным формам липнут только ו/ש (ולהפר, שהפרה); ל/ב/מ/כ/ה перед формой — уже другое слово («להפרה»).
+  const prefixes = hasForms ? ["ו", "ש"] : PREFIX_LETTERS;
+  for (const rawToken of tokens(he)) {
+    let t = normalize(rawToken);
+    for (let strip = 0; strip <= 3; strip += 1) {
+      if (forms.has(t) || isHeadForm(t)) return rawToken.slice(strip);
+      if (strip === 3 || !prefixes.includes(t[0]) || t.length <= 2) break;
+      t = t.slice(1);
     }
   }
-  return false;
+  return null;
 }
+export const containsWord = (he, word) => matchedForm(he, word) !== null;
 
 export function buildPhrasesPrompt(word) {
   const forms = formsOf(word);
@@ -79,17 +85,30 @@ export function buildPhrasesPrompt(word) {
   ].filter(Boolean).join("\n");
 }
 
+// Смысл блока — разные формы: одна и та же форма дважды не годится; меньше двух разных — не показываем.
 export function validatePhrases(raw, word) {
   const list = Array.isArray(raw?.phrases) ? raw.phrases : [];
   const seen = new Set();
+  const usedForms = new Set();
   const out = [];
   const rejected = [];
   for (const p of list) {
     const he = String(p?.he ?? "").trim(), ru = String(p?.ru ?? "").trim(), form = String(p?.form ?? "").trim();
-    const reason = !he ? "пусто" : tokens(he).length > MAX_WORDS ? "длинно" : !/[א-ת]/.test(he) ? "не иврит" : /[А-Яа-я]/.test(he) ? "кириллица в иврите" : !ru || !/[А-Яа-я]/.test(ru) ? "нет перевода" : !containsWord(he, word) ? "нет слова дня" : seen.has(normalize(he)) ? "повтор" : "";
+    const found = he ? matchedForm(he, word) : null;
+    const reason = !he ? "пусто" : tokens(he).length > MAX_WORDS ? "длинно" : !/[א-ת]/.test(he) ? "не иврит" : /[А-Яа-я]/.test(he) ? "кириллица в иврите" : !ru || !/[А-Яа-я]/.test(ru) ? "нет перевода" : !found ? "нет слова дня" : seen.has(normalize(he)) ? "повтор" : usedForms.has(normalize(found)) ? "та же форма" : "";
     if (reason) { rejected.push({ he, reason }); continue; }
-    seen.add(normalize(he));
-    out.push({ he, ru, form: form.slice(0, 40) });
+    seen.add(normalize(he)); usedForms.add(normalize(found));
+    out.push({ he, ru, form: form.slice(0, 40), matched: found });
+    if (out.length >= WANT) break;
   }
-  return { phrases: out.slice(0, WANT), rejected };
+  if (out.length < 2) return { phrases: [], rejected, note: out.length === 0 ? "ни одной годной фразы" : "фразы не в разных формах" };
+  return { phrases: out, rejected };
+}
+
+// Ключ кэша: слово, перевод и формы — поменялись → фразы делаем заново.
+export function phrasesKey(word) {
+  const src = `${word?.term ?? ""}|${word?.translation ?? ""}|${typeof word?.forms === "string" ? word.forms : JSON.stringify(word?.forms ?? {})}`;
+  let h = 0;
+  for (let i = 0; i < src.length; i += 1) h = (h * 31 + src.charCodeAt(i)) >>> 0;
+  return h.toString(16);
 }

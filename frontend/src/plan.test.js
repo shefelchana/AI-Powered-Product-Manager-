@@ -70,20 +70,27 @@ test("склонение «слово»", () => {
 });
 
 // Приветствие с поддержкой: по времени суток и по одному факту из данных.
-import { greeting, supportLine } from "./plan.js";
-test("приветствие по времени суток (Иерусалим)", () => {
-  assert.equal(greeting(new Date("2026-09-16T05:00:00Z")), "Доброе утро, Аня");   // 08:00 IL
-  assert.equal(greeting(new Date("2026-09-16T11:00:00Z")), "Добрый день, Аня");   // 14:00 IL
-  assert.equal(greeting(new Date("2026-09-16T17:00:00Z")), "Добрый вечер, Аня");  // 20:00 IL
-  assert.equal(greeting(new Date("2026-09-16T22:30:00Z")), "Привет, Аня");        // 01:30 IL
+import { greeting, supportLine, siteByDay } from "./plan.js";
+test("приветствие по времени суток (Иерусалим), границы", () => {
+  assert.equal(greeting(new Date("2026-09-16T02:00:00Z")), "Доброе утро, Аня");   // 05:00 IL
+  assert.equal(greeting(new Date("2026-09-16T09:00:00Z")), "Добрый день, Аня");   // 12:00 IL
+  assert.equal(greeting(new Date("2026-09-16T15:00:00Z")), "Добрый вечер, Аня");  // 18:00 IL
+  assert.equal(greeting(new Date("2026-09-16T20:00:00Z")), "Привет, Аня");        // 23:00 IL
+  assert.equal(greeting(new Date("2026-09-16T21:00:00Z")), "Привет, Аня");        // 00:00 IL
 });
-test("поддержка: улучшение на сайте важнее всего; потом выученное, ритм, чистое расписание, слова урока", () => {
-  assert.match(supportLine({ site: [{ pct: 80, answered: 10 }, { pct: 56, answered: 9 }] }), /80% → 56%/);
-  assert.match(supportLine({ site: [{ pct: 36, answered: 14 }, { pct: 80, answered: 10 }] }), /труднее/);
-  assert.match(supportLine({ site: [{ pct: 50, answered: 0 }], learned: 3 }), /3 слова/);
-  assert.match(supportLine({ activeDays: 4 }), /4 дня из/);
-  assert.match(supportLine({ dueCount: 0 }), /чистое/);
-  assert.match(supportLine({ dueCount: 3, lessonWords: 12 }), /хватит и 5/);
+test("сайт по дням: классная и домашняя одной даты складываются; дни с < 5 ответами не считаются", () => {
+  const days = siteByDay([{ date: "2026-09-09", answered: 20, wrong: 7 }, { date: "2026-09-09", answered: 10, wrong: 8 }, { date: "2026-09-14", answered: 1, wrong: 1 }, { date: "2026-09-07", answered: 14, wrong: 5 }]);
+  assert.deepEqual(days.map((d) => [d.date, d.answered, d.pct]), [["2026-09-07", 14, 36], ["2026-09-09", 30, 50]]);
+});
+test("поддержка: тренд по дням важнее всего; равный процент — не тренд; остальные факты чередуются по дням", () => {
+  assert.match(supportLine({ site: [{ date: "2026-09-07", answered: 14, wrong: 11 }, { date: "2026-09-14", answered: 9, wrong: 5 }] }), /79% → 56%/);
+  assert.match(supportLine({ site: [{ date: "2026-09-07", answered: 14, wrong: 5 }, { date: "2026-09-09", answered: 10, wrong: 8 }] }), /труднее/);
+  assert.doesNotMatch(supportLine({ site: [{ date: "2026-09-07", answered: 10, wrong: 5 }, { date: "2026-09-09", answered: 10, wrong: 5 }], dueCount: 3 }), /%/);
+  assert.doesNotMatch(supportLine({ site: [{ date: "2026-09-07", answered: 10, wrong: 5 }, { date: "2026-09-09", answered: 1, wrong: 1 }], dueCount: 3 }), /%/);
+  const facts = { learned: 3, activeDays: 4, dueCount: 0, lessonWords: 12 };
+  const seen = new Set([0, 1, 2, 3].map((seed) => supportLine({ ...facts, seed })));
+  assert.equal(seen.size, 4);
+  assert.match(supportLine({ activeDays: 4, seed: 0 }), /4 дня за две недели/);
+  assert.match(supportLine({ activeDays: 1, dueCount: 2 }), /Одно слово за раз/);
   assert.equal(supportLine({ dueCount: 3 }), "Одно слово за раз. Этого достаточно.");
-  assert.equal(supportLine(), "Расписание чистое. Можно просто послушать эхо и ничего не писать.");
 });

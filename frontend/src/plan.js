@@ -48,23 +48,40 @@ export function plural(n) {
 // Приветствие с поддержкой (Анна, 16.09): по времени суток и по одному настоящему факту из данных —
 // без стриков и без давления. Один факт, одна фраза.
 export function greeting(now = new Date()) {
-  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false }).format(now));
+  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "numeric", hourCycle: "h23" }).format(now)) % 24;
   if (h >= 5 && h < 12) return "Доброе утро, Аня";
   if (h >= 12 && h < 18) return "Добрый день, Аня";
   if (h >= 18 && h < 23) return "Добрый вечер, Аня";
   return "Привет, Аня";
 }
 
-export function supportLine({ dueCount = 0, activeDays = 0, learned = 0, site = [], lessonWords = 0 } = {}) {
-  const trend = Array.isArray(site) ? site.filter((s) => Number(s.answered) > 0) : [];
+// Сайт: по дням (классная и домашняя одной даты — вместе), только дни с ≥ 5 отвеченными.
+export function siteByDay(site) {
+  const byDate = new Map();
+  for (const s of Array.isArray(site) ? site : []) {
+    const d = byDate.get(s.date) ?? { date: s.date, answered: 0, wrong: 0 };
+    d.answered += Number(s.answered) || 0; d.wrong += Number(s.wrong) || 0;
+    byDate.set(s.date, d);
+  }
+  return [...byDate.values()].filter((d) => d.answered >= 5).sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .map((d) => ({ ...d, pct: Math.round((100 * d.wrong) / d.answered) }));
+}
+
+const dayWord = (n) => (n === 1 ? "день" : n >= 2 && n <= 4 ? "дня" : "дней");
+
+export function supportLine({ dueCount = 0, activeDays = 0, learned = 0, site = [], lessonWords = 0, seed = new Date().getDate() } = {}) {
+  const trend = siteByDay(site);
   if (trend.length >= 2) {
     const [a, b] = trend.slice(-2);
     if (b.pct < a.pct) return `На сайте ошибок стало меньше: ${a.pct}% → ${b.pct}%. Это твоя работа, не случайность.`;
-    if (b.pct > a.pct) return `Последняя домашка была труднее (${a.pct}% → ${b.pct}%). Это нормально: новые слова всегда сначала ломаются.`;
+    if (b.pct > a.pct) return `Последнее задание было труднее (${a.pct}% → ${b.pct}%). Это нормально: новые слова сначала ломаются.`;
   }
-  if (learned > 0) return `Уже ${learned} ${plural(learned)} вспомнились через две недели — они твои.`;
-  if (activeDays >= 3) return `Ты занималась ${activeDays} ${activeDays === 1 ? "день" : activeDays < 5 ? "дня" : "дней"} из последних четырнадцати. Ритм есть.`;
-  if (dueCount === 0) return "Расписание чистое. Можно просто послушать эхо и ничего не писать.";
-  if (lessonWords > 0) return `Слов с урока: ${lessonWords}. Не все сразу — сегодня хватит и ${Math.min(lessonWords, 5)}.`;
-  return "Одно слово за раз. Этого достаточно.";
+  // Остальные факты чередуются по дням, чтобы фраза не была одной и той же неделями.
+  const lines = [];
+  if (learned > 0) lines.push(`Уже ${learned} ${plural(learned)} вспомнились через две недели — это результат.`);
+  if (activeDays >= 3) lines.push(`Ты занималась ${activeDays} ${dayWord(activeDays)} за две недели. Ритм есть.`);
+  if (dueCount === 0) lines.push("Расписание чистое. Можно просто послушать эхо и ничего не писать.");
+  if (lessonWords > 0) lines.push(`Слов с урока: ${lessonWords}. Не все сразу — сегодня хватит и ${Math.min(lessonWords, 5)}.`);
+  if (lines.length === 0) return "Одно слово за раз. Этого достаточно.";
+  return lines[Math.abs(Number(seed) || 0) % lines.length];
 }

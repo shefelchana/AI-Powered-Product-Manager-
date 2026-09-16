@@ -261,6 +261,7 @@ function TodayBlock({ step, onGo, support = "" }) {
 
 // Сетка форм глагола: он / она / мы × прошедшее / настоящее / будущее; «Все формы» — вся таблица.
 const GRID = [
+  { who: "я", ids: ["PERF-1s", "AP-fs", "IMPF-1s"] },
   { who: "он", ids: ["PERF-3ms", "AP-ms", "IMPF-3ms"] },
   { who: "она", ids: ["PERF-3fs", "AP-fs", "IMPF-3fs"] },
   { who: "мы", ids: ["PERF-1p", "AP-mp", "IMPF-1p"] },
@@ -277,11 +278,13 @@ function FormsGrid({ word }) {
   return (
     <div className="forms-grid">
       <p className="field-label">Формы · читай вслух</p>
-      <table>
-        <thead><tr><th></th><th>прошедшее</th><th>настоящее</th><th>будущее</th></tr></thead>
-        <tbody>{GRID.map((r) => <tr key={r.who}><th>{r.who}</th>{r.ids.map((id) => <td key={id}>{cell(id)}</td>)}</tr>)}</tbody>
-      </table>
-      {!all && Object.keys(forms).length > 9 && <button className="quiet" type="button" onClick={() => setAll(true)}>Все формы</button>}
+      <div className="forms-scroll">
+        <table>
+          <thead><tr><th></th><th>прошедшее</th><th>настоящее</th><th>будущее</th></tr></thead>
+          <tbody>{GRID.map((r) => <tr key={r.who}><th>{r.who}</th>{r.ids.map((id) => <td key={`${r.who}-${id}`}>{cell(id)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+      {Object.values(forms).filter((f) => f?.bare).length > 9 && <button className="quiet" type="button" onClick={() => setAll((v) => !v)}>{all ? "Свернуть" : "Все формы"}</button>}
       {all && (
         <ul className="forms-all">
           {Object.entries(forms).map(([id, f]) => f?.bare && <li key={id}><span className="muted">{FORM_LABELS_RU[id] ?? id}</span> <span dir="rtl">{f.vocalized || f.bare}</span> <SpeakButton text={f.bare} lang="he" /></li>)}
@@ -1263,8 +1266,8 @@ function OwnPhraseForm({ word, onAdded }) {
   }
   return (
     <form onSubmit={submit} className="own-phrase">
-      <label className="field-label">Своя фраза с этим словом — пойдёт подсказкой в повторение</label>
-      <textarea dir={dirOf(word.lang)} rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <label className="field-label" htmlFor={`own-${word.id}`}>Своя фраза с этим словом — пойдёт подсказкой в повторение</label>
+      <textarea id={`own-${word.id}`} dir={dirOf(word.lang)} rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
       <button className="secondary small-btn" type="submit" disabled={!draft.trim()}>Добавить фразу</button>
       {error && <p className="error">{error}</p>}
     </form>

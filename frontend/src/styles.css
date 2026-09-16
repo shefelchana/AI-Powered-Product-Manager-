@@ -672,3 +672,9 @@ button {
 
 .today .welcome { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.25rem; }
 .today .support { margin: 0 0 0.75rem; color: #c9cdd3; }
+
+.forms-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.forms-grid td { font-size: 1.05rem; }
+
+/* Список фраз: без выхода за край при направлении справа налево */
+.examples { max-width: 100%; box-sizing: border-box; padding-inline: 1.25rem; overflow-wrap: anywhere; }
