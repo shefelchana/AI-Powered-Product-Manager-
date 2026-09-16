@@ -43,5 +43,8 @@ test("слова урока — все за ту же дату: классная
   const words = [{ id: 1, lessonId: 10 }, { id: 2, lessonId: 11 }, { id: 3, lessonId: 12 }, { id: 4, lessonId: 7 }];
   const { lesson, words: ws } = lessonSummary(words, lessons);
   assert.equal(lesson.date, "2026-09-14");
-  assert.deepEqual(ws.map((w) => w.id).sort(), [1, 2, 3]);
+  // id 12 — свой урок, ещё идёт (finishedAt null): его слова в «К уроку» не попадают.
+  assert.deepEqual(ws.map((w) => w.id).sort(), [1, 2]);
+  const closed = lessons.map((l) => (l.id === 12 ? { ...l, finishedAt: "y" } : l));
+  assert.deepEqual(lessonSummary(words, closed).words.map((w) => w.id).sort(), [1, 2, 3]);
 });

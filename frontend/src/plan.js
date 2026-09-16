@@ -44,3 +44,27 @@ export function plural(n) {
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "слова";
   return "слов";
 }
+
+// Приветствие с поддержкой (Анна, 16.09): по времени суток и по одному настоящему факту из данных —
+// без стриков и без давления. Один факт, одна фраза.
+export function greeting(now = new Date()) {
+  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false }).format(now));
+  if (h >= 5 && h < 12) return "Доброе утро, Аня";
+  if (h >= 12 && h < 18) return "Добрый день, Аня";
+  if (h >= 18 && h < 23) return "Добрый вечер, Аня";
+  return "Привет, Аня";
+}
+
+export function supportLine({ dueCount = 0, activeDays = 0, learned = 0, site = [], lessonWords = 0 } = {}) {
+  const trend = Array.isArray(site) ? site.filter((s) => Number(s.answered) > 0) : [];
+  if (trend.length >= 2) {
+    const [a, b] = trend.slice(-2);
+    if (b.pct < a.pct) return `На сайте ошибок стало меньше: ${a.pct}% → ${b.pct}%. Это твоя работа, не случайность.`;
+    if (b.pct > a.pct) return `Последняя домашка была труднее (${a.pct}% → ${b.pct}%). Это нормально: новые слова всегда сначала ломаются.`;
+  }
+  if (learned > 0) return `Уже ${learned} ${plural(learned)} вспомнились через две недели — они твои.`;
+  if (activeDays >= 3) return `Ты занималась ${activeDays} ${activeDays === 1 ? "день" : activeDays < 5 ? "дня" : "дней"} из последних четырнадцати. Ритм есть.`;
+  if (dueCount === 0) return "Расписание чистое. Можно просто послушать эхо и ничего не писать.";
+  if (lessonWords > 0) return `Слов с урока: ${lessonWords}. Не все сразу — сегодня хватит и ${Math.min(lessonWords, 5)}.`;
+  return "Одно слово за раз. Этого достаточно.";
+}

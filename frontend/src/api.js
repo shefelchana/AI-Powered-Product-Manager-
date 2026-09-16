@@ -61,3 +61,4 @@ export const progress = (lang) => request(`/api/progress?lang=${lang}`);
 export const echoSet = (limit) => request(`/api/echo?limit=${limit}`);
 export const tutorMiss = (skip) => request(`/api/tutor/miss?skip=${skip}`);
 export const tutorWeekly = () => request("/api/tutor/weekly");
+export const wordPhrases = (id) => request(`/api/words/${id}/phrases`);

@@ -68,3 +68,22 @@ test("склонение «слово»", () => {
   assert.equal(plural(1), "слово"); assert.equal(plural(2), "слова"); assert.equal(plural(5), "слов");
   assert.equal(plural(11), "слов"); assert.equal(plural(21), "слово"); assert.equal(plural(104), "слова"); assert.equal(plural(112), "слов");
 });
+
+// Приветствие с поддержкой: по времени суток и по одному факту из данных.
+import { greeting, supportLine } from "./plan.js";
+test("приветствие по времени суток (Иерусалим)", () => {
+  assert.equal(greeting(new Date("2026-09-16T05:00:00Z")), "Доброе утро, Аня");   // 08:00 IL
+  assert.equal(greeting(new Date("2026-09-16T11:00:00Z")), "Добрый день, Аня");   // 14:00 IL
+  assert.equal(greeting(new Date("2026-09-16T17:00:00Z")), "Добрый вечер, Аня");  // 20:00 IL
+  assert.equal(greeting(new Date("2026-09-16T22:30:00Z")), "Привет, Аня");        // 01:30 IL
+});
+test("поддержка: улучшение на сайте важнее всего; потом выученное, ритм, чистое расписание, слова урока", () => {
+  assert.match(supportLine({ site: [{ pct: 80, answered: 10 }, { pct: 56, answered: 9 }] }), /80% → 56%/);
+  assert.match(supportLine({ site: [{ pct: 36, answered: 14 }, { pct: 80, answered: 10 }] }), /труднее/);
+  assert.match(supportLine({ site: [{ pct: 50, answered: 0 }], learned: 3 }), /3 слова/);
+  assert.match(supportLine({ activeDays: 4 }), /4 дня из/);
+  assert.match(supportLine({ dueCount: 0 }), /чистое/);
+  assert.match(supportLine({ dueCount: 3, lessonWords: 12 }), /хватит и 5/);
+  assert.equal(supportLine({ dueCount: 3 }), "Одно слово за раз. Этого достаточно.");
+  assert.equal(supportLine(), "Расписание чистое. Можно просто послушать эхо и ничего не писать.");
+});
