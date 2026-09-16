@@ -1279,18 +1279,29 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [focusTr, setFocusTr] = useState(false);
 
   // Слово могло измениться на сервере — например, значение пришло из Pealim.
   // Без этого в полях остаётся старый черновик и следующее «Сохранить»
   // затирает только что полученное.
-  useEffect(() => { setDraft(word); }, [word.id, word.updatedAt]);
+  useEffect(() => {
+    // В режиме правки набранное не затираем: с сервера подтягиваем только пустые поля.
+    setDraft((d) => (editing && d && d.id === word.id
+      ? { ...word, term: d.term || word.term, translation: d.translation || word.translation, definition: d.definition || word.definition }
+      : word));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [word.id, word.updatedAt]);
+  useEffect(() => { if (!open) { setEditing(false); setConfirming(false); } }, [open]);
+  useEffect(() => { setConfirming(false); setError(null); if (!editing) setFocusTr(false); }, [editing]);
 
-  async function run(action) {
+  async function run(action, { close = false } = {}) {
     setBusy(true);
     setError(null);
     try {
       await action();
       await onChanged();
+      if (close) setEditing(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1310,60 +1321,85 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
     );
   }
 
+  const meta = (
+    <p className="muted small word-meta">
+      добавлено {formatDate(word.createdAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(word.createdAt)) : "")}
+      {lessonDate ? ` · урок ${formatDate(lessonDate)}` : ""}
+      {stageOf(word, learnedIds) ? ` · ${stageOf(word, learnedIds)}` : ""}
+    </p>
+  );
+
+  // Режим просмотра (UX-прогон 16.09): карточка читается, а не редактируется. Форма — по «Изменить».
+  if (!editing) {
+    return (
+      <div className="word-card word-view">
+        {meta}
+        <p className="view-term" dir={dirOf(word.lang)}>{word.term} <SpeakButton text={word.term} lang={word.lang} /></p>
+        {word.translation
+          ? <p className="translation" dir="ltr">{word.translation}</p>
+          : <button className="secondary small-btn" type="button" onClick={() => { setEditing(true); setFocusTr(true); }}>Добавить перевод</button>}
+        {word.definition && <p className="definition" dir={dirOf(word.lang)}>{word.definition}</p>}
+        <SourceNote word={word} />
+        <RootLine word={word} />
+        <Family word={word} />
+        {word.hasImage && <WordImage word={word} />}
+        <Phrases word={word} />
+        <OwnPhraseForm word={word} onAdded={onChanged} />
+        {error && <p className="error">{error}</p>}
+        <div className="row-actions">
+          <button className="secondary" type="button" onClick={() => setEditing(true)}>Изменить</button>
+          <button className="quiet" type="button" onClick={onToggle}>Свернуть</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="word-card">
-      <p className="muted small word-meta">
-        добавлено {formatDate(word.createdAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(word.createdAt)) : "")}
-        {lessonDate ? ` · урок ${formatDate(lessonDate)}` : ""}
-      </p>
-      <label className="field-label">Слово</label>
+      {meta}
+      <label className="field-label" htmlFor={`term-${word.id}`}>Слово</label>
       <input
+        id={`term-${word.id}`}
         dir="rtl"
         value={draft.term}
         onChange={(e) => setDraft({ ...draft, term: e.target.value })}
       />
 
-      <label className="field-label">Объяснение</label>
+      <label className="field-label" htmlFor={`tr-${word.id}`}>Перевод</label>
+      <input
+        id={`tr-${word.id}`}
+        dir="ltr"
+        autoFocus={focusTr}
+        value={draft.translation}
+        onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
+      />
+
+      <label className="field-label" htmlFor={`def-${word.id}`}>Объяснение</label>
       <textarea
+        id={`def-${word.id}`}
         dir="rtl"
         rows={3}
         value={draft.definition}
         onChange={(e) => setDraft({ ...draft, definition: e.target.value })}
       />
       <SourceNote word={word} />
-      <RootLine word={word} />
-      <Phrases word={word} />
-      <OwnPhraseForm word={word} onAdded={onChanged} />
 
-      <label className="field-label">Перевод</label>
-      <input
-        dir="ltr"
-        value={draft.translation}
-        onChange={(e) => setDraft({ ...draft, translation: e.target.value })}
-      />
-
-      <label className="field-label">Картинка</label>
-      <WordImage word={word} />
-      {/* Один способ: приложение рисует образ по переводу. Поиск и ручной адрес
-          ушли — три кнопки на одно действие делали картинку слишком дорогой. */}
-      {canDraw ? (
-        <button className="secondary" disabled={busy || !(word.translation || word.definition)} onClick={() => run(() => drawImage(word.id))}>
-          {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
-        </button>
-      ) : (
-        <p className="muted">Рисование выключено: на сервере не задан ключ GEMINI_API_KEY.</p>
+      {canDraw && (
+        <>
+          <label className="field-label">Картинка</label>
+          <WordImage word={word} />
+          {/* Один способ: приложение рисует образ по переводу. Поиск и ручной адрес
+              ушли — три кнопки на одно действие делали картинку слишком дорогой. */}
+          <button className="secondary" type="button" disabled={busy || !(draft.translation || draft.definition)} onClick={() => run(() => drawImage(word.id))}>
+            {busy ? "Рисую…" : word.hasImage ? "Перерисовать образ" : "Нарисовать образ"}
+          </button>
+        </>
       )}
 
       <div className="row-actions">
         <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => run(() => fromPealim(word.id))}
-        >
-          Из Pealim
-        </button>
-        <button
-          className="secondary"
+          className="primary"
+          type="button"
           disabled={busy}
           onClick={() =>
             run(() =>
@@ -1371,23 +1407,27 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
                 term: draft.term,
                 definition: draft.definition,
                 translation: draft.translation,
-              })
-            )
+              }), { close: true })
           }
         >
           Сохранить
         </button>
+        <button className="secondary" type="button" disabled={busy} onClick={() => run(() => fromPealim(word.id))}>
+          Из Pealim
+        </button>
+        <button className="quiet" type="button" disabled={busy} onClick={() => { setDraft(word); setEditing(false); setConfirming(false); }}>Отмена</button>
+      </div>
+      <div className="row-actions">
         {confirming ? (
-          <button className="danger" disabled={busy} onClick={() => run(() => deleteWord(word.id))}>
+          <button className="danger" type="button" disabled={busy} onClick={() => run(() => deleteWord(word.id))}>
             Точно удалить
           </button>
         ) : (
-          <button className="secondary" onClick={() => setConfirming(true)}>Удалить</button>
+          <button className="quiet danger-text" type="button" onClick={() => setConfirming(true)}>Удалить слово</button>
         )}
+        <button className="quiet" type="button" onClick={onToggle}>Свернуть</button>
       </div>
-
       {error && <p className="error">{error}</p>}
-      <button className="quiet" onClick={onToggle}>Свернуть</button>
     </div>
   );
 }

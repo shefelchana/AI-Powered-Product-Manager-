@@ -678,3 +678,9 @@ button {
 
 /* Список фраз: без выхода за край при направлении справа налево */
 .examples { max-width: 100%; box-sizing: border-box; padding-inline: 1.25rem; overflow-wrap: anywhere; }
+
+/* Карточка: режим просмотра */
+.word-view .view-term { font-size: 2rem; margin: 0.25rem 0 0.5rem; }
+.word-view .translation { font-size: 1.15rem; margin: 0 0 0.5rem; }
+.word-view .row-actions { margin-top: 0.75rem; }
+.danger-text { color: #ff8a80; }
