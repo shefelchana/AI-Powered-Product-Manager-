@@ -21,6 +21,31 @@ const LANGS = { he: "עברית", en: "English", ru: "Русский" };
 
 const exampleList = (word) => (word.examples ? word.examples.split("\n").filter(Boolean) : []);
 
+// Фразы на карточке: свои и из уроков. У фразы преподавателя — его аудио и огласовки на месте текста.
+// Показываем не больше шести: сначала свои, потом урочные по порядку; остальное — в практике.
+const PHRASES_ON_CARD = 6;
+function Phrases({ word }) {
+  const rows = Array.isArray(word.exampleList) && word.exampleList.length > 0
+    ? word.exampleList
+    : exampleList(word).map((text) => ({ text, origin: "own" }));
+  if (rows.length === 0) return null;
+  const own = rows.filter((r) => r.origin === "own");
+  const lesson = rows.filter((r) => r.origin !== "own");
+  const shown = [...own, ...lesson].slice(0, PHRASES_ON_CARD);
+  return (
+    <ul className="examples">
+      {shown.map((r, i) => (
+        <li key={r.id ?? i} dir="rtl" className={r.sentenceId ? "phrase-lesson" : ""}>
+          {r.vocalized || r.text}
+          {r.audioUrl ? <> <AudioButton file={r.audioUrl} /></> : null}
+          {r.sentenceId && r.ru ? <span className="muted phrase-ru" dir="ltr"> {r.ru}</span> : null}
+        </li>
+      ))}
+      {rows.length > shown.length && <li className="muted small" dir="ltr">ещё {rows.length - shown.length} в практике</li>}
+    </ul>
+  );
+}
+
 // Откуда объяснение — видно всегда. Академия даёт терминологическую справку,
 // не толкование, поэтому подпись с названием словаря и годом обязательна.
 function SourceNote({ word }) {
@@ -262,8 +287,6 @@ function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
     }
   }
 
-  const examples = exampleList(word);
-
   return (
     <div className="day">
       <TodayBlock step={step} onGo={onGo} />
@@ -296,11 +319,7 @@ function DayScreen({ lang, onChanged, step = null, onGo = () => {} }) {
 
       {error && <p className="error">{error}</p>}
 
-      {examples.length > 0 && (
-        <ul className="examples">
-          {examples.map((line, i) => <li key={i} dir="rtl">{line}</li>)}
-        </ul>
-      )}
+      <Phrases word={word} />
     </div>
   );
 }
@@ -1083,11 +1102,7 @@ function RevealCard({ word, onAnswer, listen }) {
           <SourceNote word={word} />
           <RootLine word={word} />
           <Family word={word} />
-          {exampleList(word).length > 0 && (
-            <ul className="examples">
-              {exampleList(word).map((line, i) => <li key={i} dir="rtl">{line}</li>)}
-            </ul>
-          )}
+          <Phrases word={word} />
         </div>
       )}
 
@@ -1233,6 +1248,7 @@ function WordRow({ word, open, onToggle, onChanged, canDraw = true, learnedIds =
       />
       <SourceNote word={word} />
       <RootLine word={word} />
+      <Phrases word={word} />
 
       <label className="field-label">Перевод</label>
       <input

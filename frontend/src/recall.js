@@ -57,10 +57,14 @@ const SOURCE_LABELS = {
   lesson: "из урока",
 };
 
-function clozeIn(phrases, term) {
-  for (const phrase of phrases) {
-    const at = phrase.indexOf(term);
-    if (at !== -1) return { prompt: phrase.slice(0, at) + "___" + phrase.slice(at + term.length), answer: term };
+// Пропуск в фразе: по найденной форме («הצטמצם» у термина «לצמצם»), если она известна,
+// иначе по самому термину. Ответ — то, что вырезано.
+function clozeIn(rows, term) {
+  for (const row of rows) {
+    const phrase = typeof row === "string" ? row : String(row?.text ?? "");
+    const target = (typeof row === "object" && row?.matched) ? row.matched : term;
+    const at = phrase.indexOf(target);
+    if (at !== -1) return { prompt: phrase.slice(0, at) + "___" + phrase.slice(at + target.length), answer: target };
   }
   return null;
 }
@@ -91,8 +95,8 @@ export function promptFor(word) {
   const rows = Array.isArray(word.exampleList) && word.exampleList.length > 0
     ? word.exampleList
     : String(word.examples ?? "").split("\n").filter(Boolean).map((text) => ({ text, origin: "own" }));
-  const own = clozeIn(rows.filter((r) => r.origin === "own").map((r) => r.text), term);
-  const lesson = clozeIn(rows.filter((r) => r.origin === "lesson").map((r) => r.text), term);
+  const own = clozeIn(rows.filter((r) => r.origin === "own"), term);
+  const lesson = clozeIn(rows.filter((r) => r.origin === "lesson"), term);
   const hint = (own ?? lesson)?.prompt ?? "";
 
   const translation = String(word.translation ?? "").trim();

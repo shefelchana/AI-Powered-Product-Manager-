@@ -11,7 +11,14 @@ export function presentWord(word) {
   const plain = word.toJSON();
   // Порядок — по id: порядок include не гарантирован, а фразы должны идти как записаны.
   const rows = [...(plain.exampleRows ?? [])].sort((a, b) => a.id - b.id);
-  plain.exampleList = rows.map(({ id, text, origin, lessonId, timestamp }) => ({ id, text, origin, lessonId, timestamp }));
+  plain.exampleList = rows.map(({ id, text, origin, lessonId, timestamp, sentenceId, matched, sentenceRef }) => ({
+    id, text, origin, lessonId, timestamp,
+    sentenceId: sentenceId ?? null,
+    matched: matched || "",
+    audioUrl: sentenceRef?.audioUrl || "",
+    vocalized: sentenceRef?.heVocalized || "",
+    ru: sentenceRef?.ru || "",
+  }));
   plain.examples = rows.map((row) => row.text).join("\n");
   delete plain.exampleRows;
   plain.hasImage = Boolean(plain.imageData);

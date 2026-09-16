@@ -636,3 +636,8 @@ button {
 .today { border: 1px solid #2b2f37; border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1.25rem; }
 .today-title { font-size: 1.25rem; font-weight: 600; margin: 0.2rem 0 0.3rem; }
 .today .primary { margin-top: 0.5rem; }
+
+/* Фразы урока на карточке */
+.examples .phrase-lesson { margin-bottom: 0.35rem; }
+.examples .phrase-ru { display: block; font-size: 0.85rem; }
+.examples .listen-again { font-size: 1.1rem; padding: 0.1rem 0.45rem; vertical-align: middle; }

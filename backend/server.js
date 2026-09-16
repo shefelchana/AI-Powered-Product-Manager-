@@ -13,6 +13,8 @@ import { progressReport } from "./progress.js";
 import { bareTerm } from "./terms.js";
 import { pickWordOfDay, reasonFor } from "./day.js";
 import { pickEcho } from "./echo.js";
+import { linkLesson, linkWord } from "./enrich.js";
+import { lookupHeWiktionary } from "./he-wiktionary.js";
 import { buildExercises } from "./practice.js";
 import { recordReview } from "./schedule.js";
 import { fetchRecord, isTermPath, lookup } from "./academy.js";
@@ -128,6 +130,8 @@ app.post("/api/words", async (req, res) => {
     box: 1,
     nextDue: today(),
   });
+  // Фразы уже импортированных уроков — к новому слову (детерминированно, по формам, если есть).
+  try { await linkWord(word.id); } catch { /* связи — не повод не сохранить слово */ }
   // Фразы с этим словом — сразу при добавлении (Анна, 14.09): по строке на фразу,
   // пустые и повторы пропускаются; ошибка одной фразы слово не роняет.
   const rawPhrases = Array.isArray(req.body?.examples) ? req.body.examples : String(req.body?.examples ?? "").split("\n");
@@ -198,7 +202,10 @@ app.post("/api/import/lesson", async (req, res) => {
 
 app.post("/api/import/lesson/apply", async (req, res) => {
   try {
-    res.status(201).json(await applyLessonImport(req.body?.lesson, req.body?.picks, req.body?.sentences));
+    const result = await applyLessonImport(req.body?.lesson, req.body?.picks, req.body?.sentences);
+    // Фразы преподавателя — к словам: сразу после импорта, детерминированно, только новые связи.
+    const links = await linkLesson(result.lessonId);
+    res.status(201).json({ ...result, linked: links.linked });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -524,6 +531,7 @@ app.post("/api/words/:id/pealim", async (req, res) => {
   word.binyan = found.binyan;
   if (found.forms && Object.keys(found.forms).length > 0) word.forms = JSON.stringify(found.forms);
   await word.save();
+  try { await linkWord(word.id); } catch { /* связи — не повод сломать ответ */ }
   res.json(withoutImageBytes(word));
 });
 
@@ -562,6 +570,7 @@ app.post("/api/practice/prepare", async (req, res) => {
         word.forms = "{}";
       }
       await word.save();
+      if (word.forms !== "{}") { try { await linkWord(word.id); } catch { /* см. выше */ } }
     } catch (error) {
       failed.push(word.term);
     }
@@ -595,6 +604,62 @@ app.get("/api/echo", async (req, res) => {
   const lastLesson = await Lesson.findOne({ order: [["date", "DESC"], ["id", "DESC"]] });
   const sentences = await Sentence.findAll({ where: { audioUrl: { [Op.ne]: "" } }, attributes: ["id", "he", "heVocalized", "ru", "audioUrl", "lessonId", "wrongCount"] });
   res.json(pickEcho(sentences.map((x) => x.toJSON()), { limit: req.query.limit, recentLessonId: lastLesson?.id ?? null }));
+});
+
+// Сборка карточек урока без человека (launchd после сбора с сайта). Пишет только связи фраз,
+// формы Pealim у глаголов без форм и толкование в пустое поле — ничего не перезаписывает.
+// Закрыто секретом ENRICH_TOKEN: прод без аутентификации, а тут запись и походы во внешние сайты.
+const ENRICH_PEALIM_LIMIT = 5;
+const GAP_MS = 800; // пауза между походами на внешние сайты
+app.post("/api/lessons/:id/enrich", async (req, res) => {
+  const token = process.env.ENRICH_TOKEN || "";
+  if (!token) return res.status(503).json({ error: "ENRICH_TOKEN не задан на сервере — сборка отключена" });
+  if (req.get("x-enrich-token") !== token) return res.status(401).json({ error: "нет доступа" });
+  const lesson = await Lesson.findByPk(req.params.id);
+  if (!lesson) return res.status(404).json({ error: "Урок не найден" });
+
+  const report = { lessonId: lesson.id, linked: 0, rejected: 0, pealim: { fetched: 0, failed: [] }, definitions: { found: 0, missing: 0, failed: [] } };
+  // 1. Формы для глаголов урока без форм — с паузой, не больше ENRICH_PEALIM_LIMIT за раз.
+  const lessonWords = await Word.unscoped().findAll({ where: { lessonId: lesson.id, lang: "he" } });
+  for (const word of lessonWords.filter(looksLikeVerb).slice(0, ENRICH_PEALIM_LIMIT)) {
+    try {
+      const found = await lookupPealim(word.term);
+      word.forms = found?.forms && Object.keys(found.forms).length > 0 ? JSON.stringify(found.forms) : "{}";
+      if (found?.root && !word.root) word.root = found.root;
+      if (found?.binyan && !word.binyan) word.binyan = found.binyan;
+      await word.save();
+      if (word.forms !== "{}") report.pealim.fetched += 1;
+    } catch (error) {
+      report.pealim.failed.push(word.term);
+    }
+    await new Promise((r) => setTimeout(r, GAP_MS));
+  }
+  // 2. Фразы урока — ко всем словам.
+  const links = await linkLesson(lesson.id);
+  report.linked = links.linked;
+  report.rejected = links.rejected.length;
+  // 3. Толкование на иврите — только в пустое поле, «не нашли» помнится по дате.
+  for (const word of lessonWords) {
+    if (word.definition || word.definitionCheckedAt) continue;
+    try {
+      const found = await lookupHeWiktionary(word);
+      word.definitionCheckedAt = new Date();
+      if (found) {
+        word.definition = found.text;
+        word.definitionSource = "wiktionary";
+        word.sourceLabel = found.label;
+        word.sourceUrl = found.url;
+        report.definitions.found += 1;
+      } else {
+        report.definitions.missing += 1;
+      }
+      await word.save();
+    } catch (error) {
+      report.definitions.failed.push(word.term);
+    }
+    await new Promise((r) => setTimeout(r, GAP_MS));
+  }
+  res.json(report);
 });
 
 app.post("/api/practice/attempts", async (req, res) => {
