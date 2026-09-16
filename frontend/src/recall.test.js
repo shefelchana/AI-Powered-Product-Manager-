@@ -214,3 +214,24 @@ test("подсказка не зависит от огласовок и коне
   assert.equal(missHint("שָׁלוֹם", "שלום"), null);
   assert.equal(missHint("רכישה", "רַכִישָׁה"), null);
 });
+
+// Фраза урока найдена по форме глагола: пропуск и ответ — форма, а не инфинитив (ревью 16.09).
+test("фраза урока с найденной формой: пропуск по форме, ответ — форма", () => {
+  const word = { term: "לצמצם", translation: "", lessonNote: "", exampleList: [{ text: "התקציב הצטמצם השנה.", origin: "lesson", matched: "הצטמצם" }] };
+  const p = promptFor(word);
+  assert.equal(p.kind, "lesson");
+  assert.equal(p.prompt, "התקציב ___ השנה.");
+  assert.equal(p.answer, "הצטמצם");
+});
+
+test("своя фраза без matched — пропуск по термину, как раньше", () => {
+  const word = { term: "לצמצם", translation: "сокращать", lessonNote: "", exampleList: [{ text: "צריך לצמצם הוצאות", origin: "own" }] };
+  const p = promptFor(word);
+  assert.equal(p.kind, "translation");
+  assert.equal(p.hint, "צריך ___ הוצאות");
+});
+
+test("matched не найден в тексте — пропуск по термину, а не тишина", () => {
+  const word = { term: "לצמצם", translation: "", lessonNote: "", exampleList: [{ text: "צריך לצמצם הוצאות", origin: "lesson", matched: "הצטמצם" }] };
+  assert.equal(promptFor(word).prompt, "צריך ___ הוצאות");
+});

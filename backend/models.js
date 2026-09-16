@@ -59,6 +59,8 @@ export const Word = sequelize.define("Word", {
   // The day this word was the word of the day, so it is not picked twice.
   dayPickedAt: { type: DataTypes.DATEONLY, allowNull: true },
   dayReason: { type: DataTypes.STRING(80), allowNull: false, defaultValue: "" },
+  // Когда последний раз искали толкование в Викисловаре (и не нашли — тоже дата).
+  definitionCheckedAt: { type: DataTypes.DATE, allowNull: true },
   lesson: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
   // Списки языков раздельные: иврит учится отдельно от английского.
   lang: { type: DataTypes.STRING(2), allowNull: false, defaultValue: "he" },
@@ -98,6 +100,9 @@ export const Example = sequelize.define("Example", {
   origin: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "own" },
   lessonId: { type: DataTypes.INTEGER, allowNull: true },
   timestamp: { type: DataTypes.STRING(10), allowNull: false, defaultValue: "" },
+  // Фраза урока: предложение преподавателя (аудио) и найденная в нём форма слова.
+  sentenceId: { type: DataTypes.INTEGER, allowNull: true },
+  matched: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "" },
 });
 
 Word.belongsTo(Lesson, { foreignKey: "lessonId", as: "lessonRef" });
@@ -110,9 +115,6 @@ Example.belongsTo(Lesson, { foreignKey: "lessonId" });
 // подгрузить, а фронтенд получает examples строкой, как и раньше.
 // separate: примеры отдельным запросом, а не JOIN. JOIN размножал бы байты
 // картинки на число фраз и ломал Word.count().
-Word.addScope("defaultScope", {
-  include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]] }],
-}, { override: true });
 
 // Попытка в практике форм: по каким формам промахи, чтобы спрашивать их чаще.
 export const PracticeAttempt = sequelize.define("PracticeAttempt", {
@@ -136,6 +138,12 @@ export const Sentence = sequelize.define("Sentence", {
 });
 Sentence.belongsTo(Lesson, { foreignKey: "lessonId" });
 Lesson.hasMany(Sentence, { foreignKey: "lessonId" });
+Example.belongsTo(Sentence, { foreignKey: "sentenceId", as: "sentenceRef" });
+
+// Область по умолчанию объявляется после Sentence: примеры тянут предложение преподавателя.
+Word.addScope("defaultScope", {
+  include: [{ model: Example, as: "exampleRows", separate: true, order: [["id", "ASC"]], include: [{ model: Sentence, as: "sentenceRef", attributes: ["id", "heVocalized", "audioUrl", "ru"] }] }],
+}, { override: true });
 
 // Ответ на повторении: журнал для удержания и точности по неделям.
 export const ReviewAttempt = sequelize.define("ReviewAttempt", {

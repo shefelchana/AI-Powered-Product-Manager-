@@ -20,7 +20,8 @@ test("на пустой базе появляются Words, Lessons, Examples �
   assert.ok(words.lessonId, "у Words нет lessonId");
   assert.ok(words.examples, "старая колонка examples должна остаться до уборки");
   const examples = await qi.describeTable("Examples");
-  assert.deepEqual(Object.keys(examples).sort(), ["createdAt", "id", "lessonId", "origin", "text", "timestamp", "updatedAt", "wordId"]);
+  // 0011 добавила ссылку на предложение урока и найденную форму слова.
+  assert.deepEqual(Object.keys(examples).sort(), ["createdAt", "id", "lessonId", "matched", "origin", "sentenceId", "text", "timestamp", "updatedAt", "wordId"]);
 });
 
 // База, какой её оставил sync({ alter: true }) до появления миграций:
@@ -186,4 +187,17 @@ test("0010: огласовки снимаются с уже записанных
   const terms = rows.map((r) => r.term);
   assert.ok(terms.includes("שלום"), "огласовки сняты");
   assert.ok(terms.includes("מַס") && terms.includes("מס"), "при столкновении оба ряда остаются как были");
+});
+
+test("0011: у примера есть sentenceId и matched, у слова — definitionCheckedAt; пара слово–предложение уникальна", async () => {
+  const db = await legacyDatabase();
+  await migrate(db);
+  const qi = db.getQueryInterface();
+  const ex = await qi.describeTable("Examples");
+  assert.ok(ex.sentenceId && ex.matched, "колонки примера");
+  const words = await qi.describeTable("Words");
+  assert.ok(words.definitionCheckedAt, "отметка проверки толкования");
+  const idx = await qi.showIndex("Examples");
+  assert.ok(idx.some((i) => i.name === "examples_word_sentence" && i.unique), "уникальный индекс");
+  await migrate(db); // повторный прогон — без ошибок
 });
