@@ -7,14 +7,18 @@ import { PREPOSITIONS } from "./practice.js";
 // Буквы, которые звучат одинаково (или почти): ошибка на слух, не на глаз. Тоже орфография.
 const HOMOPHONE_GROUPS = [["ט", "ת"], ["כ", "ק"], ["ס", "ש"], ["א", "ע", "ה"], ["ו", "ב"], ["ח", "כ"]];
 const homophone = (a, b) => HOMOPHONE_GROUPS.some((g) => g.includes(a) && g.includes(b));
+// В начале слова ב = /b/, כ = /k/, а א/ע/ה — приставки времени и лица: там это не омофоны.
+const INITIAL_DISTINCT = [["ו", "ב"], ["ח", "כ"], ["א", "ע", "ה"]];
 function homophoneHint(g, e) {
   const a = normalize(g), b = normalize(e);
   if (!a || a.length !== b.length || a === b) return null;
   const diffs = [];
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diffs.push(i);
   if (diffs.length === 0 || diffs.length > 2 || !diffs.every((i) => homophone(a[i], b[i]))) return null;
+  if (diffs.includes(0) && INITIAL_DISTINCT.some((grp) => grp.includes(a[0]) && grp.includes(b[0]))) return null;
   return "одинаково звучат: " + diffs.map((i) => `${a[i]} и ${b[i]}`).join(", ");
 }
+const PRONOUNS = new Set(["אני", "אתה", "את", "הוא", "היא", "אנחנו", "אתם", "אתן", "הם", "הן"]);
 // Предлог с местоимением: «איתו» (עם) и «אותו» (את) отличаются одной буквой, но это не опечатка.
 const PRONOUN_FORMS = new Map();
 for (const [prep, rows] of Object.entries(PREPOSITIONS)) for (const r of rows) PRONOUN_FORMS.set(normalize(r.he), prep);
@@ -49,18 +53,31 @@ export function wordDiff(given, expected) {
 
 // Род говорящей: она пишет о себе в женском роде, сайт считает это ошибкой. Не ошибка.
 const feminineOf = (masc, fem) => fem === masc + "ת" || fem === masc + "ה" || (masc.endsWith("ל") && fem === masc.slice(0, -1) + "לת");
-const isSpeakerGender = ([g, e]) => feminineOf(normalize(e), normalize(g));
+// Только когда речь о себе: в предложении есть «я/мы», а перед словом не стоит «он/она/ты/они».
+function isSpeakerGender([g, e], expectedTokens) {
+  if (!feminineOf(normalize(e), normalize(g))) return false;
+  const firstPerson = expectedTokens.some((t) => ["אני", "אנחנו", "הייתי", "היינו"].includes(normalize(t)));
+  const at = expectedTokens.findIndex((t) => normalize(t) === normalize(e));
+  const prev = at > 0 ? normalize(expectedTokens[at - 1]) : "";
+  return firstPerson && !["הוא", "היא", "אתה", "את", "הם", "הן", "אתם", "אתן"].includes(prev);
+}
+const VERB_ENDINGS = ["תי", "נו", "תם", "תן"];
 
 export function classifyDeterministic(miss) {
   const diff = wordDiff(miss.given, miss.expected);
-  const pairs = diff.pairs.filter((p) => !isSpeakerGender(p));
+  const expTokens = tokens(miss.expected);
+  const pairs = diff.pairs.filter((p) => !isSpeakerGender(p, expTokens));
   const genderOnly = diff.pairs.length > 0 && pairs.length === 0 && diff.extra.length === 0 && diff.missing.length === 0;
   if (genderOnly) {
     return { verdict: "not_an_error", type: "not_an_error", about: diff.pairs[0][0], why: "Это женский род: ты пишешь о себе, и так правильно. Сайт ждал форму мужского рода из эталона.", tip: "Ошибки нет — иди дальше.", source: "rule" };
   }
   if (pairs.length === 1 && diff.extra.length === 0 && diff.missing.length === 0) {
     const [g, e] = pairs[0];
+    if (PRONOUNS.has(normalize(g)) && PRONOUNS.has(normalize(e))) {
+      return { verdict: "explained", type: "agreement", about: e, why: `Местоимение: нужно «${e}», написано «${g}». Проверь, о ком речь — род и число задают форму глагола дальше.`, tip: "Подставь перевод местоимения по-русски и сверь с глаголом.", source: "rule" };
+    }
     const pg = PRONOUN_FORMS.get(normalize(g)), pe = PRONOUN_FORMS.get(normalize(e));
+    if (pg && pe && pg === pe) return null;   // тот же предлог, другое лицо (לו/לי) — не опечатка, пусть объяснит модель
     if (pg && pe && pg !== pe) {
       return { verdict: "explained", type: "preposition", about: e, why: `Нужен предлог «${pe}»: «${e}», а «${g}» — это «${pg}» с местоимением. Глагол управляет предлогом, его надо помнить вместе со словом.`, tip: `Запомни связку глагол + «${pe}» одной фразой из урока.`, source: "rule" };
     }
@@ -70,7 +87,14 @@ export function classifyDeterministic(miss) {
       return { verdict: "explained", type: "spelling", about: e, why: `${hint}: ты написала «${g}», нужно «${e}».`, tip, source: "rule" };
     }
     const ne = normalize(e), ng = normalize(g);
-    if ((ne.startsWith("ה") && ng === ne.slice(1)) || (ne.startsWith("מה") && ng === "מ" + ne.slice(2)) || (ne.startsWith("בה") && ng === "ב" + ne.slice(2)) || (ne.startsWith("לה") && ng === "ל" + ne.slice(2)) || (ne.startsWith("וה") && ng === "ו" + ne.slice(2))) {
+    const at = expTokens.findIndex((t) => normalize(t) === ne);
+    const prev = at > 0 ? normalize(expTokens[at - 1]) : "";
+    const stem = ne.startsWith("ה") ? ne.slice(1) : "";
+    // Голый артикль: только если стем не похож на глагол (окончания прошедшего времени) и перед словом
+    // не местоимение (иначе «הוא התחיל» → «тחיל» приняли бы за артикль). Слитый с предлогом (מה/בה/לה/וה) — надёжен.
+    const bareArticle = stem && ng === stem && stem.length >= 3 && !VERB_ENDINGS.some((x) => stem.endsWith(x)) && !PRONOUNS.has(prev);
+    const fused = (ne.startsWith("מה") && ng === "מ" + ne.slice(2)) || (ne.startsWith("בה") && ng === "ב" + ne.slice(2)) || (ne.startsWith("לה") && ng === "ל" + ne.slice(2)) || (ne.startsWith("וה") && ng === "ו" + ne.slice(2));
+    if (bareArticle || fused) {
       return { verdict: "explained", type: "article", about: e, why: `Пропущен определённый артикль ה: нужно «${e}», не «${g}». После предлога ה сливается: מ + ה → מה.`, tip: "Если существительное определённое, ה должен быть и у прилагательного, и после предлога.", source: "rule" };
     }
   }
@@ -127,8 +151,9 @@ export function validateMiss(raw, miss) {
     if (typeof o[k] !== "string" || !o[k].trim()) return { ok: false, reason: `пустое ${k}` };
     if (o[k].length > MAX_FIELD) return { ok: false, reason: `длинное ${k}` };
   }
-  const hay = normalize(miss.expected) + "|" + normalize(miss.given);
-  const aboutOk = normalize(o.about).split("|")[0].split(/\s+/).every((w) => w && hay.includes(normalize(w)));
+  const known = new Set([...tokens(miss.expected), ...tokens(miss.given)].map(normalize));
+  const parts = tokens(o.about).map(normalize).filter(Boolean);
+  const aboutOk = parts.length > 0 && parts.every((w) => w.length >= 2 && known.has(w));
   if (!aboutOk) return { ok: false, reason: "about не из данных" };
   if (sentencesOf(o.why) + sentencesOf(o.tip) > 5) return { ok: false, reason: "длинно" };
   if (cyrillicShare(o.why) < 0.3) return { ok: false, reason: "why не по-русски" };

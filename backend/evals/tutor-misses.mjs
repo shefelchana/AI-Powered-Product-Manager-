@@ -7,7 +7,7 @@ import { classifyDeterministic, buildMissPrompt, validateMiss, askGemini, MISS_S
 
 const fx = JSON.parse(fs.readFileSync(new URL("../fixtures/tutor-misses.json", import.meta.url), "utf-8"));
 const only = process.argv[2] === "--rules-only";
-let correct = 0, byRule = 0, invalid = 0, modelCalls = 0;
+let correct = 0, byRule = 0, invalid = 0, modelCalls = 0, modelCorrect = 0;
 const perClass = {};
 const rows = [];
 for (const item of fx.items) {
@@ -28,6 +28,7 @@ for (const item of fx.items) {
   const got = r.verdict === "not_an_error" ? "not_an_error" : r.type;
   const ok = item.expectedTypes.includes(got);
   if (ok) correct += 1;
+  if (ok && source === "model") modelCorrect += 1;
   const main = item.expectedTypes[0];
   perClass[main] = perClass[main] || { n: 0, ok: 0 };
   perClass[main].n += 1; if (ok) perClass[main].ok += 1;
@@ -35,5 +36,6 @@ for (const item of fx.items) {
 }
 for (const row of rows) console.log(row.join(" | "));
 const total = only ? byRule : fx.items.length;
-console.log(`\nправилом: ${byRule}, моделью: ${modelCalls}, верно: ${correct}/${total} (${Math.round((100 * correct) / total)}%), отказов валидатора: ${invalid}`);
+console.log(`\nправилом: ${byRule}, моделью: ${modelCalls}, верно всего: ${correct}/${total} (${Math.round((100 * correct) / total)}%), отказов валидатора: ${invalid}`);
+if (modelCalls) console.log(`ворота — только модель: ${modelCorrect}/${modelCalls} (${Math.round((100 * modelCorrect) / modelCalls)}%), порог 80%`);
 console.log("по классам:", Object.entries(perClass).map(([k, v]) => `${k} ${v.ok}/${v.n}`).join(", "));

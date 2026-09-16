@@ -1055,14 +1055,14 @@ function StrictCard({ word, cloze, onAnswer, onRequeue }) {
           </p>
 
           {result === "gaveup" ? (
-            <button className="primary" onClick={() => onAnswer(false)}>Дальше</button>
+            <button className="primary" onClick={() => onAnswer(false, typed)}>Дальше</button>
           ) : (
             <div className="verdict-actions">
               {/* Отделяем незнание от промаха чтения — иначе дислексия
                   превращает каждую описку в «не знаю». */}
               {/* «Не знала» стоит первой намеренно: зелёная кнопка сверху
                   подталкивала бы засчитывать себе знание не глядя. */}
-              <button className="answer-no" onClick={() => onAnswer(false)}>Не знала</button>
+              <button className="answer-no" onClick={() => onAnswer(false, typed)}>Не знала</button>
               <button className="answer-yes" onClick={() => onAnswer(true)}>Опечатка — я знала</button>
               <button className="quiet" onClick={onRequeue}>Показать ещё раз</button>
               <ImageSuggestion word={word} />
@@ -1158,12 +1158,13 @@ function ReviewScreen({ queue, pool = [], onFinished, onMore, listen, mode = "ty
     );
   }
 
-  async function answer(known) {
+  async function answer(known, given = "") {
     setError(null);
     try {
       // Повторение к уроку коробки не трогает: это прогон, а не расписание.
       // Вне расписания ответ тоже уходит: сервер пишет журнал и сам не двигает коробку на «знаю».
-      if (!practice) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode);
+      // Что было написано при промахе — тоже: это материал для разбора тьютором.
+      if (!practice) await reviewWord(word.id, known, ahead ? "ahead" : listen ? "listen" : mode, known ? "" : given);
       setIndex(index + 1);
     } catch (err) {
       setError(err.message);
@@ -1387,12 +1388,13 @@ function TutorMisses() {
 }
 
 function ProgressBlock({ report, stats, onLesson, tutor = false }) {
+  const [open, setOpen] = useState(false);
   if (!report) return null;
   const total = Object.values(report.stages).reduce((a, b) => a + b, 0) || 1;
   const pct = (n) => Math.round((n / total) * 100);
   const ret = report.retention;
   return (
-    <details className="progress-block">
+    <details className="progress-block" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>Прогресс</summary>
       <div className="stage-bar" aria-hidden="true">
         {STAGE_ORDER.map(([k]) => report.stages[k] > 0 && <span key={k} className={`stage-seg stage-${k}`} style={{ width: `${pct(report.stages[k])}%` }} />)}
@@ -1413,8 +1415,9 @@ function ProgressBlock({ report, stats, onLesson, tutor = false }) {
         {report.activeDays.map((d) => <span key={d.date} className={d.active ? "dot on" : "dot"} title={d.date} />)}
         <span className="muted"> дни с повторением, две недели</span>
       </p>
-      {tutor && <TutorWeekly />}
-      {tutor && <TutorMisses />}
+      {tutor && open && <TutorWeekly />}
+      {tutor && open && <TutorMisses />}
+      {tutor && open && <p className="muted small">Тьютор: твои ответы и цифры прогресса уходят в Gemini (Google) только для разбора; в колоду тьютор не пишет.</p>}
       {report.hard.length > 0 && (
         <p className="muted hard-words">Не держится:{" "}
           {report.hard.map((h) => <span key={h.id} className="chip"><bdi dir="rtl">{h.term}</bdi> <small>{h.misses}</small></span>)}

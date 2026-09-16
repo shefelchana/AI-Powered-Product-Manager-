@@ -83,3 +83,33 @@ test("вызов модели: без ключа — понятная ошибк
   assert.deepEqual(await askGemini({ prompt: "x", schema: MISS_SCHEMA, key: "k", fetchImpl: fake }), { a: 1 });
   await assert.rejects(askGemini({ prompt: "x", schema: MISS_SCHEMA, key: "k", fetchImpl: async () => ({ ok: false, status: 429 }) }), /Квота/);
 });
+
+// Из ревью 16.09: правила не должны срабатывать там, где это не их случай.
+test("род говорящей — только в первом лице; «он/она» + окончание — не «не ошибка»", () => {
+  assert.equal(classifyDeterministic({ given: "הוא אמרה שלום", expected: "הוא אמר שלום" }), null);
+  assert.equal(classifyDeterministic({ given: "כתבת מכתב", expected: "כתב מכתב" }), null);
+  assert.equal(classifyDeterministic({ given: "אני שוקלת לעזוב", expected: "אני שוקל לעזוב" }).verdict, "not_an_error");
+});
+
+test("артикль: приставка глагола — не артикль; слитый с предлогом — артикль", () => {
+  assert.equal(classifyDeterministic({ given: "הוא תחיל לעבוד", expected: "הוא התחיל לעבוד" }), null);
+  assert.equal(classifyDeterministic({ given: "ענקתי לו זמן", expected: "הענקתי לו זמן" }), null);
+  assert.equal(classifyDeterministic({ given: "אחת משותפות", expected: "אחת מהשותפות" }).type, "article");
+  assert.equal(classifyDeterministic({ given: "למורים חדשים", expected: "למורים החדשים" }).type, "article");
+});
+
+test("омофоны в начале слова и местоимения — не опечатка", () => {
+  assert.equal(classifyDeterministic({ given: "וילדים באו", expected: "בילדים באו" }), null);
+  assert.equal(classifyDeterministic({ given: "הסביר לי", expected: "אסביר לי" }), null);
+  assert.equal(classifyDeterministic({ given: "היא בא", expected: "הוא בא" }).type, "agreement");
+  assert.equal(classifyDeterministic({ given: "נתן לי", expected: "נתן לו" }), null);
+});
+
+test("about должен совпадать с целым словом из данных, не с фрагментом", () => {
+  const miss = { given: "זה ההניק משמעות", expected: "זה העניק משמעות" };
+  const base = { verdict: "explained", type: "spelling", why: "Буквы ה и ע звучат одинаково, но пишутся по-разному.", tip: "Запомни корень ע-נ-ק." };
+  assert.equal(validateMiss({ ...base, about: "עניק" }, miss).ok, false);
+  assert.equal(validateMiss({ ...base, about: "ה" }, miss).ok, false);
+  assert.equal(validateMiss({ ...base, about: "העניק" }, miss).ok, true);
+  assert.equal(validateMiss({ ...base, about: "ההניק העניק" }, miss).ok, true);
+});

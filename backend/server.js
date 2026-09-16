@@ -676,13 +676,15 @@ app.post("/api/lessons/:id/enrich", async (req, res) => {
 // ---------- тьютор ----------
 // Дневной лимит вызовов модели — в базе: сервер на Render засыпает и перезапускается.
 const TUTOR_DAILY_CALLS = Number(process.env.TUTOR_DAILY_CALLS) || 20;
+const TUTOR_MODEL_BUDGET_PER_REQUEST = 2;
+let tutorPausedUntil = 0; // после 429 от модели — час не дёргать
 async function takeTutorCall() {
-  if (Number(process.env.TUTOR_PAUSED_UNTIL) > Date.now()) return false;
+  if (tutorPausedUntil > Date.now()) return false;
   const day = today();
-  const [row] = await TutorCall.findOrCreate({ where: { day }, defaults: { day, count: 0 } });
-  if (row.count >= TUTOR_DAILY_CALLS) return false;
-  row.count += 1; await row.save();
-  return true;
+  try { await TutorCall.findOrCreate({ where: { day }, defaults: { day, count: 0 } }); } catch { /* гонка двух первых запросов дня — строка уже есть */ }
+  // Атомарно: увеличить, только если лимит ещё не выбран.
+  const [affected] = await TutorCall.update({ count: sequelize.literal('"count" + 1') }, { where: { day, count: { [Op.lt]: TUTOR_DAILY_CALLS } } });
+  return affected > 0;
 }
 const tutorOff = (res) => res.status(503).json({ error: "Тьютор выключен: на сервере нет GEMINI_API_KEY" });
 
@@ -696,6 +698,7 @@ async function recentMisses(limit) {
 
 // Один промах за раз: skip — сколько уже разобрано в этой сессии. Правило — бесплатно; модель — по лимиту.
 app.get("/api/tutor/miss", async (req, res) => {
+  try {
   const skip = Math.max(0, parseInt(req.query.skip, 10) || 0);
   const misses = await recentMisses(skip + 10);
   if (!misses[skip]) return res.json({ miss: null, total: misses.length });
@@ -703,12 +706,15 @@ app.get("/api/tutor/miss", async (req, res) => {
   // Идём от skip дальше: правило — сразу; модель — по лимиту; если модель молчит — берём следующий
   // промах, который объясняется правилом, а не показываем пустоту.
   let note = "";
+  let budget = TUTOR_MODEL_BUDGET_PER_REQUEST;
   for (let i = skip; i < misses.length; i += 1) {
     const miss = misses[i];
     const rule = classifyDeterministic(miss);
     if (rule) return res.json({ miss: publicOf(miss), explanation: rule, skip: i, note });
     if (!process.env.GEMINI_API_KEY) { note = note || "Тьютор выключен: нет GEMINI_API_KEY — показываю только то, что объясняется правилами"; continue; }
+    if (budget <= 0) { note = note || "На один запрос — не больше двух обращений к модели; остальное пропускаю"; continue; }
     if (!(await takeTutorCall())) { note = note || "Лимит разборов моделью на сегодня исчерпан — показываю то, что объясняется правилами"; continue; }
+    budget -= 1;
     try {
       const raw = await askGemini({ prompt: buildMissPrompt(miss), schema: MISS_SCHEMA });
       const v = validateMiss(raw, miss);
@@ -716,16 +722,20 @@ app.get("/api/tutor/miss", async (req, res) => {
       note = note || `Тьютор ответил невнятно (${v.reason}) — пропускаю такие промахи`;
     } catch (error) {
       note = note || `Тьютор не ответил (${error.message}) — показываю то, что объясняется правилами`;
-      if (error.code === "quota" || error.code === "no_key") process.env.TUTOR_PAUSED_UNTIL = String(Date.now() + 60 * 60 * 1000);
+      if (error.code === "quota") tutorPausedUntil = Date.now() + 60 * 60 * 1000;
     }
   }
   res.json({ miss: publicOf(misses[skip]), explanation: null, skip, note: note || "Правило не подошло, а модель не помогла — пропусти этот промах" });
+  } catch (error) {
+    res.status(500).json({ error: `Разбор не удался: ${error.message}` });
+  }
 });
 
 // Дайджест недели: кэш на 7 дней, цифры — из отчёта прогресса, модель только формулирует.
 app.get("/api/tutor/weekly", async (req, res) => {
+  try {
   const cached = await TutorNote.findOne({ where: { kind: "weekly" }, order: [["id", "DESC"]] });
-  const fresh = cached && (Date.now() - new Date(cached.createdAt).getTime()) < 7 * 86400000;
+  const fresh = cached && !req.query.force && (Date.now() - new Date(cached.createdAt).getTime()) < 7 * 86400000;
   if (fresh) return res.json({ ...JSON.parse(cached.json), date: cached.forDate, cached: true });
   if (!process.env.GEMINI_API_KEY) return tutorOff(res);
   const lang = "he";
@@ -737,7 +747,7 @@ app.get("/api/tutor/weekly", async (req, res) => {
   const sentences = (await Sentence.findAll({ attributes: ["id", "wrongCount"] })).map((x) => x.toJSON());
   const report = progressReport(words.map((w) => w.toJSON()), attempts.map((a) => a.toJSON()), lessons.map((l) => l.toJSON()), practice.map((p) => p.toJSON()));
   const facts = weeklyFacts(report, { sentences });
-  if (!(await takeTutorCall())) return res.status(429).json({ error: "Лимит тьютора на сегодня исчерпан" });
+  if (!(await takeTutorCall())) return res.json({ error: "Лимит тьютора на сегодня исчерпан — дайджест завтра", date: today() });
   try {
     const raw = await askGemini({ prompt: buildWeeklyPrompt(facts), schema: WEEKLY_SCHEMA });
     const v = validateWeekly(raw);
@@ -745,7 +755,11 @@ app.get("/api/tutor/weekly", async (req, res) => {
     const note = await TutorNote.create({ kind: "weekly", forDate: today(), json: JSON.stringify({ ...v.value, facts: { total: facts.total, activeDays: facts.activeDays, retention: facts.retention } }) });
     res.json({ ...JSON.parse(note.json), date: note.forDate, cached: false });
   } catch (error) {
+    if (error.code === "quota") tutorPausedUntil = Date.now() + 60 * 60 * 1000;
     res.status(502).json({ error: `Тьютор не ответил: ${error.message}` });
+  }
+  } catch (error) {
+    res.status(500).json({ error: `Дайджест не удался: ${error.message}` });
   }
 });
 
