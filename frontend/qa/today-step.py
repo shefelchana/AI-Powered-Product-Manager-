@@ -14,7 +14,7 @@ with sync_playwright() as p:
     pg.screenshot(path=f"{OUT}/today-step.png")
     pg.locator(".today button").click(); pg.wait_for_timeout(600)   # кнопка называется по шагу: «Повторять», «Открыть эхо»…
     if title.startswith("Повторить:"):
-        assert pg.get_by_role("button", name="Фразы: формы и предлоги").count() == 1, "не открылось меню повторения"
+        assert pg.get_by_role("button", name="Фразы: формы, предлоги, отрицания").count() == 1, "не открылось меню повторения"
         print("→ меню повторения открыто")
     elif title.startswith("Эхо"):
         assert "слушай" in pg.locator(".prompt-label").inner_text(); print("→ эхо открыто")

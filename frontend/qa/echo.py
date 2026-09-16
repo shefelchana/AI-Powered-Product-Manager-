@@ -7,7 +7,8 @@ FAKE_AUDIO = "class FakeAudio { constructor(s){this.src=s;} play(){ (window.__pl
 def open_echo(pg):
     pg.goto(BASE); pg.wait_for_load_state("networkidle")
     pg.get_by_role("button", name="Повторять").first.click(); pg.wait_for_timeout(400)
-    pg.get_by_role("button", name="Произношение: повтори за преподавателем").click(); pg.wait_for_timeout(1200)
+    if pg.locator("summary", has_text="Другие способы").count(): pg.locator("summary", has_text="Другие способы").click(); pg.wait_for_timeout(200)
+    pg.get_by_role("button", name="Произношение: повтори за преподавателем").click()
 
 with sync_playwright() as p:
     # 1. Микрофон есть (фейковое устройство, разрешение выдаётся автоматически)
@@ -47,7 +48,7 @@ with sync_playwright() as p:
     pg.get_by_role("button", name="Записать себя").click()
     pg.locator(".prompt-label", has_text="запись").wait_for(timeout=8000)
     pg.get_by_role("button", name="Выйти").click(); pg.wait_for_timeout(500)
-    assert pg.get_by_role("button", name="Произношение: повтори за преподавателем").count() == 1
+    assert pg.locator(".review-menu").count() == 1, "после «Выйти» не вернулись в меню"
     print("uploads during session:", uploads)
     assert uploads == [], "со страницы ушёл запрос с телом"
     print("pageerrors (mic):", errors)

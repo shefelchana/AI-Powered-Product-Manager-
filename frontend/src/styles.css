@@ -684,3 +684,9 @@ button {
 .word-view .translation { font-size: 1.15rem; margin: 0 0 0.5rem; }
 .word-view .row-actions { margin-top: 0.75rem; }
 .danger-text { color: #ff8a80; }
+
+/* Меню повторения: два действия на виду, остальное под «Другие способы» */
+.review-menu > .primary, .review-menu > .secondary { width: 100%; margin: 0.35rem 0; }
+.more-ways { margin: 0.5rem 0 1rem; }
+.more-ways summary { color: #9aa0a6; cursor: pointer; padding: 0.4rem 0; }
+.more-ways .review-menu-row { margin-top: 0.4rem; }

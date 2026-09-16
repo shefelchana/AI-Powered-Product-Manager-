@@ -32,7 +32,7 @@ with sync_playwright() as p:
     # «Фразы» при сбое сети
     pg.route("**/api/practice/**", lambda route, req: route.abort())
     pg.locator(".nav button").nth(2).click(); pg.wait_for_timeout(400)
-    pg.get_by_role("button", name="Фразы: формы и предлоги").click(); pg.wait_for_timeout(1500)
+    pg.get_by_role("button", name="Фразы: формы, предлоги, отрицания").click(); pg.wait_for_timeout(1500)
     text = pg.locator(".done").inner_text() if pg.locator(".done").count() else pg.locator("body").inner_text()
     print("practice failure:", text.replace("\n", " / ")[:120])
     assert "Не получилось загрузить" in text and "Пока нечего тренировать" not in text

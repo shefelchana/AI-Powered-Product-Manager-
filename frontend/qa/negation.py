@@ -12,7 +12,7 @@ with sync_playwright() as p:
     for attempt in range(6):
         pg.goto(BASE); pg.wait_for_load_state("networkidle")
         pg.get_by_role("button", name="Повторять").first.click(); pg.wait_for_timeout(300)
-        pg.get_by_role("button", name="Фразы: формы и предлоги").click(); pg.wait_for_timeout(1200)
+        pg.get_by_role("button", name="Фразы: формы, предлоги, отрицания").click(); pg.wait_for_timeout(1200)
         for i in range(10):
             if pg.locator(".prompt-label").count() == 0: break
             if "отрицание" in pg.locator(".prompt-label").inner_text(): found = True; break
